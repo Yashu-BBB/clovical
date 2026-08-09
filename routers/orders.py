@@ -18,7 +18,7 @@ from utils.whatsapp_utils import (
 )
 from utils.nimbuspost import create_shipment
 from utils.label_generator import build_shopkeeper_package_pdf
-from utils.cache import cache_get, cache_set, cache_delete, two_layer_get, two_layer_set
+from utils.cache import cache_get, cache_set, cache_delete, two_layer_get, two_layer_set, mem_clear_pattern, cache_clear_pattern
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -373,6 +373,18 @@ async def create_order(order: OrderRequest, request: Request):
     if not prod or prod["stock"] < 1:
         raise HTTPException(status_code=400, detail="Product out of stock")
 
+    # Per-variant stock check. A size/colour that isn't a key in the map has
+    # no per-variant restriction (older products without variant-level stock
+    # keep working exactly as before). A variant present with a value <= 0
+    # is out of stock and must never be orderable, even if the storefront UI
+    # somehow let it through (e.g. a stale page, a bypassed frontend check).
+    size_stock_map = prod.get("size_stock") or {}
+    color_stock_map = prod.get("color_stock") or {}
+    if order.size in size_stock_map and size_stock_map[order.size] is not None and size_stock_map[order.size] <= 0:
+        raise HTTPException(status_code=400, detail=f"Size '{order.size}' is out of stock")
+    if order.color in color_stock_map and color_stock_map[order.color] is not None and color_stock_map[order.color] <= 0:
+        raise HTTPException(status_code=400, detail=f"Colour '{order.color}' is out of stock")
+
     # Delivery fee is frozen at order-creation time (from the admin setting)
     # so later changes to the setting never alter an existing order's total.
     delivery_fee = await get_delivery_fee()
@@ -423,9 +435,19 @@ async def create_order(order: OrderRequest, request: Request):
     # since we read it above. If it has (a concurrent order beat us to it),
     # roll back the order we just created instead of allowing stock to go negative.
     try:
+        stock_update = {"stock": prod["stock"] - 1}
+        if order.size in size_stock_map and size_stock_map[order.size] is not None:
+            updated_size_map = dict(size_stock_map)
+            updated_size_map[order.size] = max(0, updated_size_map[order.size] - 1)
+            stock_update["size_stock"] = updated_size_map
+        if order.color in color_stock_map and color_stock_map[order.color] is not None:
+            updated_color_map = dict(color_stock_map)
+            updated_color_map[order.color] = max(0, updated_color_map[order.color] - 1)
+            stock_update["color_stock"] = updated_color_map
+
         stock_result = await run_query(
             supabase_admin.table("products")
-            .update({"stock": prod["stock"] - 1})
+            .update(stock_update)
             .eq("id", order.product_id)
             .eq("stock", prod["stock"])
         )
@@ -437,6 +459,11 @@ async def create_order(order: OrderRequest, request: Request):
                 status_code=409,
                 detail="Product just went out of stock. Please try again."
             )
+        # Invalidate cached product data so the storefront immediately
+        # reflects the updated overall/variant stock instead of serving a
+        # stale "in stock" snapshot to the next visitor.
+        mem_clear_pattern("product:")
+        await cache_clear_pattern("products:*")
     except HTTPException:
         raise
     except Exception as e:

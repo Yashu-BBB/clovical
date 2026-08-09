@@ -109,6 +109,20 @@
     }
     .size-chart-actions { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
     .size-chart-empty { font-size: 0.82rem; color: var(--muted); padding: 14px; text-align: center; }
+
+    /* ─── Per-Variant Stock ─────────────────────────────── */
+    .variant-stock-rows { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+    .variant-stock-row {
+      display: flex; align-items: center; gap: 6px;
+      border: 1.5px solid var(--border); border-radius: 8px; padding: 6px 10px;
+      background: #fff;
+    }
+    .variant-stock-row .variant-stock-label { font-weight: 600; font-size: 0.82rem; min-width: 20px; }
+    .variant-stock-row input[type="number"] {
+      width: 60px; border: 1px solid var(--border); border-radius: 6px;
+      padding: 4px 6px; font-size: 0.82rem; font-family: inherit;
+    }
+    .variant-stock-empty { font-size: 0.8rem; color: var(--muted); }
   </style>
 </head>
 <body>
@@ -232,12 +246,26 @@
           Selected: <span id="selected-sizes-display" style="color:var(--primary);font-weight:600">None</span>
         </div>
         <input type="hidden" name="sizes_raw" id="sizes-hidden">
+
+        <!-- Per-size stock -->
+        <div style="margin-top:12px">
+          <label class="form-label" style="font-size:0.8rem">Stock per size <span style="color:var(--muted);font-weight:400">— leave blank to not track that size separately</span></label>
+          <div id="size-stock-rows" class="variant-stock-rows"></div>
+        </div>
+        <input type="hidden" name="size_stock" id="size-stock-hidden" value="{}">
       </div>
 
       <!-- Colors -->
       <div class="form-group">
         <label class="form-label">Colors (comma separated)</label>
         <input class="form-control" name="colors_raw" placeholder="e.g. Red, Black, White, Navy Blue">
+
+        <!-- Per-color stock -->
+        <div style="margin-top:12px">
+          <label class="form-label" style="font-size:0.8rem">Stock per colour <span style="color:var(--muted);font-weight:400">— leave blank to not track that colour separately</span></label>
+          <div id="color-stock-rows" class="variant-stock-rows"></div>
+        </div>
+        <input type="hidden" name="color_stock" id="color-stock-hidden" value="{}">
       </div>
 
       <!-- Size Chart (optional) -->
@@ -321,6 +349,69 @@
 <script>
 let editingId = null;
 let selectedSizes = [];
+
+// ─── PER-VARIANT STOCK ──────────────────────────────────────────────────────
+// Maps like { "S": 4, "M": 0 } / { "Red": 3, "Black": 0 }. A size/colour with
+// no entry here has no per-variant restriction and just relies on the
+// overall Stock field — so this is fully optional and backward-compatible.
+let variantSizeStock = {};
+let variantColorStock = {};
+
+function renderSizeStockRows() {
+  const wrap = document.getElementById('size-stock-rows');
+  if (!wrap) return;
+  if (!selectedSizes.length) {
+    wrap.innerHTML = '<span class="variant-stock-empty">Select sizes above first</span>';
+    return;
+  }
+  wrap.innerHTML = selectedSizes.map(s => `
+    <div class="variant-stock-row">
+      <span class="variant-stock-label">${s}</span>
+      <input type="number" min="0" placeholder="—"
+             value="${variantSizeStock[s] !== undefined && variantSizeStock[s] !== null ? variantSizeStock[s] : ''}"
+             oninput="setSizeStock('${s}', this.value)">
+    </div>
+  `).join('');
+}
+
+function setSizeStock(size, val) {
+  if (val === '' || val === null) {
+    delete variantSizeStock[size];
+  } else {
+    variantSizeStock[size] = Math.max(0, parseInt(val, 10) || 0);
+  }
+}
+
+function renderColorStockRows() {
+  const wrap = document.getElementById('color-stock-rows');
+  if (!wrap) return;
+  const raw = document.querySelector('[name=colors_raw]')?.value || '';
+  const colors = raw.split(',').map(c => c.trim()).filter(Boolean);
+  if (!colors.length) {
+    wrap.innerHTML = '<span class="variant-stock-empty">Add colours above first</span>';
+    return;
+  }
+  wrap.innerHTML = colors.map(c => `
+    <div class="variant-stock-row">
+      <span class="variant-stock-label">${c}</span>
+      <input type="number" min="0" placeholder="—"
+             value="${variantColorStock[c] !== undefined && variantColorStock[c] !== null ? variantColorStock[c] : ''}"
+             oninput="setColorStock('${c}', this.value)">
+    </div>
+  `).join('');
+}
+
+function setColorStock(color, val) {
+  if (val === '' || val === null) {
+    delete variantColorStock[color];
+  } else {
+    variantColorStock[color] = Math.max(0, parseInt(val, 10) || 0);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelector('[name=colors_raw]')?.addEventListener('input', renderColorStockRows);
+});
 
 // ─── MULTI-IMAGE UPLOADER ──────────────────────────────────────────────────
 // Each entry: { type: 'existing'|'new', url: string, file?: File }
@@ -635,12 +726,14 @@ function renderSizeChips(sizes) {
   if (!sizes.length) {
     grid.innerHTML = '<span style="color:var(--muted);font-size:0.85rem">Type custom sizes above and press Enter</span>';
     updateSizesHidden();
+    renderSizeStockRows();
     return;
   }
   grid.innerHTML = sizes.map(s => `
     <div class="size-chip ${selectedSizes.includes(s) ? 'selected' : ''}" onclick="toggleSize('${s}', this)">${s}</div>
   `).join('');
   updateSizesHidden();
+  renderSizeStockRows();
 }
 
 function toggleSize(size, el) {
@@ -648,11 +741,13 @@ function toggleSize(size, el) {
   if (idx > -1) {
     selectedSizes.splice(idx, 1);
     el.classList.remove('selected');
+    delete variantSizeStock[size];
   } else {
     selectedSizes.push(size);
     el.classList.add('selected');
   }
   updateSizesHidden();
+  renderSizeStockRows();
 }
 
 function updateSizesHidden() {
@@ -678,6 +773,7 @@ document.addEventListener('DOMContentLoaded', () => {
           if (grid.querySelector('span')) grid.innerHTML = '';
           grid.appendChild(chip);
           updateSizesHidden();
+          renderSizeStockRows();
         }
         customInput.value = '';
       }
@@ -816,12 +912,15 @@ async function loadShopkeeperDropdown(currentVal = '') {
 function openModal() {
   editingId = null;
   selectedSizes = [];
+  variantSizeStock = {};
+  variantColorStock = {};
   imageSlots = [];
   document.getElementById("modal-title").textContent = "Add Product";
   document.getElementById("product-form").reset();
   document.getElementById("modal-alert").innerHTML = "";
   selectGender('Girls');
   loadSizePreset('standard', document.querySelector('.size-type-tab'));
+  renderColorStockRows();
   clearSizeChart();
   document.getElementById("size-chart-hidden").value = "";
   document.getElementById("clear-size-chart-hidden").value = "false";
@@ -842,7 +941,14 @@ function openEdit(p) {
   form.shopkeeper_price.value = p.shopkeeper_price;
   form.colors_raw.value = (p.colors || []).join(", ");
   form.stock.value = p.stock;
+  form.mrp.value = (p.mrp !== null && p.mrp !== undefined) ? p.mrp : "";
   document.getElementById("featured-cb").checked = p.featured;
+  updateDiscountPreview();
+
+  // Per-variant stock — keyed by size/colour, independent of each other.
+  variantSizeStock = (p.size_stock && typeof p.size_stock === 'object') ? { ...p.size_stock } : {};
+  variantColorStock = (p.color_stock && typeof p.color_stock === 'object') ? { ...p.color_stock } : {};
+  renderColorStockRows();
 
   // Gender — skip selectGender's own auto-reload (true) since we load the
   // category dropdown ourselves right below with the product's actual
@@ -926,7 +1032,17 @@ document.getElementById("product-form").addEventListener("submit", async functio
   fd.append('mrp', form.mrp?.value || '');
   fd.append('sizes', JSON.stringify(selectedSizes));
   const colorsRaw = form.colors_raw?.value || '';
-  fd.append('colors', JSON.stringify(colorsRaw.split(',').map(c => c.trim()).filter(Boolean)));
+  const colorsList = colorsRaw.split(',').map(c => c.trim()).filter(Boolean);
+  fd.append('colors', JSON.stringify(colorsList));
+
+  // Per-variant stock — only keep entries for sizes/colours that are still
+  // actually selected, so a removed size/colour doesn't leave a stray entry.
+  const sizeStockOut = {};
+  selectedSizes.forEach(s => { if (variantSizeStock[s] !== undefined) sizeStockOut[s] = variantSizeStock[s]; });
+  const colorStockOut = {};
+  colorsList.forEach(c => { if (variantColorStock[c] !== undefined) colorStockOut[c] = variantColorStock[c]; });
+  fd.append('size_stock', JSON.stringify(sizeStockOut));
+  fd.append('color_stock', JSON.stringify(colorStockOut));
   fd.append('featured', document.getElementById('featured-cb').checked);
   fd.append('gender', document.getElementById('gender-val').value);
   fd.append('category', form.category?.value || document.getElementById('category-select').value || '');

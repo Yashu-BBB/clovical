@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
 
-SAFE_FIELDS = "id,name,description,our_price,mrp,sizes,colors,image,images,category,gender,featured,stock,shopkeeper_code,view_count,created_at,size_chart"
+SAFE_FIELDS = "id,name,description,our_price,mrp,sizes,colors,image,images,category,gender,featured,stock,size_stock,color_stock,shopkeeper_code,view_count,created_at,size_chart"
 
 MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB per image
 MAX_TOTAL_IMAGES = 6
@@ -259,10 +259,25 @@ async def add_product(
     shopkeeper_id: int = Form(...),
     size_chart: str = Form(None),
     clear_size_chart: str = Form("false"),
+    size_stock: str = Form("{}"),   # JSON map, e.g. {"S": 4, "M": 0}
+    color_stock: str = Form("{}"),  # JSON map, e.g. {"Red": 3, "Black": 0}
     images: List[UploadFile] = File(default=[]),
     admin=Depends(require_admin)
 ):
     try:
+        try:
+            parsed_size_stock = json.loads(size_stock) if size_stock else {}
+            if not isinstance(parsed_size_stock, dict):
+                parsed_size_stock = {}
+        except Exception:
+            parsed_size_stock = {}
+        try:
+            parsed_color_stock = json.loads(color_stock) if color_stock else {}
+            if not isinstance(parsed_color_stock, dict):
+                parsed_color_stock = {}
+        except Exception:
+            parsed_color_stock = {}
+
         sk = await run_query(supabase_admin.table("shopkeepers").select("id").eq("id", shopkeeper_id).single())
         if not sk.data:
             raise HTTPException(status_code=404, detail="Shopkeeper not found")
@@ -315,6 +330,8 @@ async def add_product(
             "mrp": mrp if mrp else None,
             "featured": featured,
             "stock": stock,
+            "size_stock": parsed_size_stock,
+            "color_stock": parsed_color_stock,
             "shopkeeper_id": shopkeeper_id,
             "shopkeeper_code": shopkeeper_code,
             "image": primary_image,
@@ -351,6 +368,8 @@ async def edit_product(
     shopkeeper_id: int = Form(None),
     size_chart: str = Form(None),
     clear_size_chart: str = Form("false"),
+    size_stock: str = Form(None),   # JSON map, e.g. {"S": 4, "M": 0}
+    color_stock: str = Form(None),  # JSON map, e.g. {"Red": 3, "Black": 0}
     keep_images: str = Form("[]"),       # JSON array of existing image URLs to keep
     new_images: List[UploadFile] = File(default=[]),   # newly uploaded images
     admin=Depends(require_admin)
@@ -374,6 +393,20 @@ async def edit_product(
         if mrp is not None: updates["mrp"] = mrp if mrp > 0 else None
         if featured is not None: updates["featured"] = featured
         if stock is not None: updates["stock"] = stock
+        if size_stock is not None:
+            try:
+                parsed = json.loads(size_stock)
+                if isinstance(parsed, dict):
+                    updates["size_stock"] = parsed
+            except Exception:
+                pass
+        if color_stock is not None:
+            try:
+                parsed = json.loads(color_stock)
+                if isinstance(parsed, dict):
+                    updates["color_stock"] = parsed
+            except Exception:
+                pass
         if shopkeeper_id is not None:
             updates["shopkeeper_id"] = shopkeeper_id
             updates["shopkeeper_code"] = f"#{shopkeeper_id:03d}"

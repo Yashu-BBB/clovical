@@ -330,6 +330,17 @@
     .color-chip:hover { border-color: #0A0A0A; color: #0A0A0A; }
     .color-chip.selected { background: #0A0A0A; border-color: #0A0A0A; color: #FFFFFF; font-weight: 600; }
 
+    /* Out-of-stock variant — faded and not clickable */
+    .size-chip.chip-disabled,
+    .color-chip.chip-disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      text-decoration: line-through;
+      pointer-events: none;
+    }
+    .size-chip.chip-disabled:hover,
+    .color-chip.chip-disabled:hover { border-color: #C0C0C0; color: #0A0A0A; }
+
     /* ─── ACTION BUTTONS ──────────────────────────────────── */
     .actions-row {
       display: flex;
@@ -921,24 +932,30 @@
 
         // Sizes
         const sizes = Array.isArray(product.sizes) ? product.sizes : JSON.parse(product.sizes || "[]");
+        const sizeStockMap = (product.size_stock && typeof product.size_stock === 'object') ? product.size_stock : {};
         const sizeWrap = document.getElementById("size-chips");
         if (sizes.length > 0) {
-          sizeWrap.innerHTML = sizes.map(s =>
-            `<div class="size-chip" onclick="selectChip(this,'size','${s}')">${s}</div>`
-          ).join("");
-          if (sizes.length === 1) selectChip(sizeWrap.firstChild, "size", sizes[0]);
+          sizeWrap.innerHTML = sizes.map(s => {
+            const outOfStock = isVariantOutOfStock(sizeStockMap, s);
+            return `<div class="size-chip${outOfStock ? ' chip-disabled' : ''}" ${outOfStock ? 'title="Out of stock"' : `onclick="selectChip(this,'size','${s}')"`}>${s}</div>`;
+          }).join("");
+          const firstAvailable = sizeWrap.querySelector('.size-chip:not(.chip-disabled)');
+          if (sizes.length === 1 && firstAvailable) selectChip(firstAvailable, "size", sizes[0]);
         } else {
           document.getElementById("size-section").style.display = "none";
         }
 
         // Colors
         const colors = Array.isArray(product.colors) ? product.colors : JSON.parse(product.colors || "[]");
+        const colorStockMap = (product.color_stock && typeof product.color_stock === 'object') ? product.color_stock : {};
         const colorWrap = document.getElementById("color-chips");
         if (colors.length > 0) {
-          colorWrap.innerHTML = colors.map(c =>
-            `<div class="color-chip" onclick="selectChip(this,'color','${c}')">${c}</div>`
-          ).join("");
-          if (colors.length === 1) selectChip(colorWrap.firstChild, "color", colors[0]);
+          colorWrap.innerHTML = colors.map(c => {
+            const outOfStock = isVariantOutOfStock(colorStockMap, c);
+            return `<div class="color-chip${outOfStock ? ' chip-disabled' : ''}" ${outOfStock ? 'title="Out of stock"' : `onclick="selectChip(this,'color','${c}')"`}>${c}</div>`;
+          }).join("");
+          const firstAvailable = colorWrap.querySelector('.color-chip:not(.chip-disabled)');
+          if (colors.length === 1 && firstAvailable) selectChip(firstAvailable, "color", colors[0]);
         } else {
           document.getElementById("color-section").style.display = "none";
         }
@@ -959,7 +976,18 @@
       }
     }
 
+    // A size/colour that isn't a key in the stock map has no per-variant
+    // restriction and just relies on the overall product stock — so this
+    // stays fully backward-compatible with products that never had
+    // per-variant stock configured.
+    function isVariantOutOfStock(stockMap, value) {
+      if (!stockMap || typeof stockMap !== 'object') return false;
+      const v = stockMap[value];
+      return v !== undefined && v !== null && v <= 0;
+    }
+
     function selectChip(el, type, value) {
+      if (el.classList.contains("chip-disabled")) return;
       const group = el.parentElement;
       group.querySelectorAll(".size-chip,.color-chip").forEach(c => c.classList.remove("selected"));
       el.classList.add("selected");
@@ -967,12 +995,29 @@
       if (type === "color") selectedColor = value;
     }
 
+    function selectedVariantAvailable() {
+      const sizeStockMap = (product?.size_stock && typeof product.size_stock === 'object') ? product.size_stock : {};
+      const colorStockMap = (product?.color_stock && typeof product.color_stock === 'object') ? product.color_stock : {};
+      if (selectedSize && isVariantOutOfStock(sizeStockMap, selectedSize)) {
+        showToast(`Size '${selectedSize}' is out of stock`, "error");
+        return false;
+      }
+      if (selectedColor && isVariantOutOfStock(colorStockMap, selectedColor)) {
+        showToast(`Colour '${selectedColor}' is out of stock`, "error");
+        return false;
+      }
+      return true;
+    }
+
     function addToCart() {
       const sizes = Array.isArray(product?.sizes) ? product.sizes : JSON.parse(product?.sizes || "[]");
       const colors = Array.isArray(product?.colors) ? product.colors : JSON.parse(product?.colors || "[]");
       if (sizes.length > 1 && !selectedSize) { showToast("Please select a size", "error"); return; }
       if (colors.length > 1 && !selectedColor) { showToast("Please select a colour", "error"); return; }
+      if (sizes.length === 1 && !selectedSize) { showToast(`Size '${sizes[0]}' is out of stock`, "error"); return; }
+      if (colors.length === 1 && !selectedColor) { showToast(`Colour '${colors[0]}' is out of stock`, "error"); return; }
       if (product.stock < 1) { showToast("Out of stock", "error"); return; }
+      if (!selectedVariantAvailable()) return;
       Cart.add(product, selectedSize || "One Size", selectedColor || "Default");
     }
 
@@ -981,7 +1026,10 @@
       const colors = Array.isArray(product?.colors) ? product.colors : JSON.parse(product?.colors || "[]");
       if (sizes.length > 1 && !selectedSize) { showToast("Please select a size", "error"); return; }
       if (colors.length > 1 && !selectedColor) { showToast("Please select a colour", "error"); return; }
+      if (sizes.length === 1 && !selectedSize) { showToast(`Size '${sizes[0]}' is out of stock`, "error"); return; }
+      if (colors.length === 1 && !selectedColor) { showToast(`Colour '${colors[0]}' is out of stock`, "error"); return; }
       if (product.stock < 1) { showToast("Out of stock", "error"); return; }
+      if (!selectedVariantAvailable()) return;
       Cart.add(product, selectedSize || "One Size", selectedColor || "Default");
       window.location = "/checkout";
     }
