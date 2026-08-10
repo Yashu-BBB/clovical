@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Requests — clovical Admin</title>
+  <link rel="stylesheet" href="/static/css/shared.css">
+  <link rel="stylesheet" href="/static/css/admin.css">
+  <style>
+    .filter-bar { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:20px; }
+    .filter-bar select { padding:8px 12px; border:2px solid var(--border); border-radius:8px; font-size:0.9rem; }
+    .req-thumb { width:44px; height:56px; object-fit:cover; border-radius:6px; border:1px solid var(--border); }
+    .req-thumb-placeholder { width:44px; height:56px; border-radius:6px; border:1px dashed var(--border); display:flex; align-items:center; justify-content:center; font-size:0.75rem; color:var(--muted); background:#FAFAFA; }
+    .ai-img-preview { width:90px; height:110px; object-fit:cover; border-radius:8px; border:2px solid var(--border); margin-top:6px; }
+    .ai-img-wrap { display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap; }
+    .req-detail-col { display:flex; flex-direction:column; gap:6px; font-size:0.85rem; }
+    .req-detail-col .label { color:var(--muted); font-size:0.75rem; }
+  </style>
+</head>
+<body>
+<div class="admin-layout">
+  {% set active = 'requests' %}
+  {% include 'admin/_sidebar.html' %}
+
+  <div class="admin-main">
+    <div class="admin-topbar">
+      <div style="display:flex;align-items:center;gap:12px">
+        <button class="sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
+        <span class="admin-topbar-title">Requests</span>
+      </div>
+    </div>
+
+    <div class="admin-content">
+      <div class="filter-bar">
+        <select id="filter-status" onchange="loadRequests()">
+          <option value="pending">Pending</option>
+          <option value="accepted">Accepted</option>
+          <option value="rejected">Rejected</option>
+          <option value="all">All</option>
+        </select>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Photo</th><th>Product</th><th>Shopkeeper</th><th>Their Price</th>
+              <th>Margin</th><th>MRP</th><th>AI Image</th><th>Status</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="requests-body">
+            <tr><td colspan="9" style="text-align:center;padding:32px;color:var(--muted)">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Review Modal -->
+<div class="modal-overlay" id="review-modal">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-header">
+      <h3 class="modal-title">Review Request</h3>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div id="modal-alert"></div>
+
+    <div class="ai-img-wrap">
+      <div>
+        <div class="req-detail-col"><span class="label">Shopkeeper's Photo</span></div>
+        <img id="sk-photo" class="ai-img-preview" src="" alt="">
+      </div>
+      <div>
+        <div class="req-detail-col"><span class="label">AI-Generated Replacement</span></div>
+        <img id="ai-photo" class="ai-img-preview" src="" style="display:none">
+        <div id="ai-photo-empty" style="width:90px;height:110px;border-radius:8px;border:2px dashed var(--border);display:flex;align-items:center;justify-content:center;font-size:0.7rem;color:var(--muted);text-align:center;padding:4px">Not attached yet</div>
+      </div>
+    </div>
+
+    <div class="form-group" style="margin-top:14px">
+      <label class="form-label">Attach / Replace AI-Generated Image *</label>
+      <input class="form-control" type="file" id="ai-image-input" accept="image/jpeg,image/png,image/webp">
+      <div style="font-size:0.78rem;color:var(--muted);margin-top:4px">This becomes the single stored product image. The shopkeeper's original photo is permanently deleted once accepted.</div>
+    </div>
+
+    <div style="display:flex;gap:12px">
+      <div class="form-group" style="flex:1">
+        <label class="form-label">Margin (₹) *</label>
+        <input class="form-control" type="number" step="0.01" id="margin-input" placeholder="Added on top of shopkeeper price">
+      </div>
+      <div class="form-group" style="flex:1">
+        <label class="form-label">MRP (₹)</label>
+        <input class="form-control" type="number" step="0.01" id="mrp-input" placeholder="Optional — for showing a discount">
+      </div>
+    </div>
+
+    <div id="req-summary" class="req-detail-col" style="background:#FAFAFA;border-radius:10px;padding:12px;margin-top:6px"></div>
+
+    <div style="display:flex;gap:12px;margin-top:16px">
+      <button class="btn btn-outline" style="flex:1" id="save-btn" onclick="saveReview()">Save (Margin / MRP / Image)</button>
+      <button class="btn btn-primary" style="flex:1" id="accept-btn" onclick="acceptRequest()">Accept → Make Live</button>
+    </div>
+    <button class="btn btn-danger btn-block" style="margin-top:10px" onclick="rejectRequest()">Reject & Delete Request</button>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+<script src="/static/js/shared.js"></script>
+<script>
+let requests = [];
+let activeRequest = null;
+
+async function loadRequests() {
+  const status = document.getElementById('filter-status').value;
+  try {
+    requests = await apiFetch(`/api/requests/admin/all?status=${status}`);
+    const body = document.getElementById('requests-body');
+    if (!requests.length) {
+      body.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:32px;color:var(--muted)">No requests here.</td></tr>';
+      return;
+    }
+    body.innerHTML = requests.map(r => `
+      <tr>
+        <td>${r.shopkeeper_image_thumb ? `<img class="req-thumb" src="${r.shopkeeper_image_thumb}">` : (r.admin_image ? `<img class="req-thumb" src="${r.admin_image}">` : '<div class="req-thumb-placeholder">—</div>')}</td>
+        <td><strong>${r.name}</strong><br><span style="font-size:0.78rem;color:var(--muted)">${r.category || '—'} · ${r.gender || '—'}</span></td>
+        <td>#${String(r.shopkeeper_id).padStart(3,'0')}</td>
+        <td>₹${Number(r.shopkeeper_price).toLocaleString('en-IN')}</td>
+        <td>${r.margin != null ? '₹' + Number(r.margin).toLocaleString('en-IN') : '<span style="color:var(--muted)">Not set</span>'}</td>
+        <td>${r.mrp != null ? '₹' + Number(r.mrp).toLocaleString('en-IN') : '—'}</td>
+        <td>${r.admin_image ? '<span class="badge badge-success">Attached</span>' : '<span class="badge badge-muted">Pending</span>'}</td>
+        <td><span class="badge badge-${r.status === 'accepted' ? 'success' : r.status === 'rejected' ? 'danger' : 'gold'}">${r.status}</span></td>
+        <td>${r.status === 'pending' ? `<button class="btn btn-outline btn-sm" onclick='openReview(${JSON.stringify(r)})'>Review</button>` : '—'}</td>
+      </tr>
+    `).join('');
+  } catch(e) {
+    showToast(e.message || 'Failed to load requests', 'error');
+  }
+}
+
+function openReview(r) {
+  activeRequest = r;
+  document.getElementById('modal-alert').innerHTML = '';
+  document.getElementById('ai-image-input').value = '';
+  document.getElementById('margin-input').value = r.margin != null ? r.margin : '';
+  document.getElementById('mrp-input').value = r.mrp != null ? r.mrp : '';
+
+  document.getElementById('sk-photo').src = r.shopkeeper_image || '';
+
+  const aiImg = document.getElementById('ai-photo');
+  const aiEmpty = document.getElementById('ai-photo-empty');
+  if (r.admin_image) {
+    aiImg.src = r.admin_image; aiImg.style.display = 'block'; aiEmpty.style.display = 'none';
+  } else {
+    aiImg.style.display = 'none'; aiEmpty.style.display = 'flex';
+  }
+
+  renderSummary(r);
+  document.getElementById('review-modal').classList.add('open');
+}
+
+function renderSummary(r) {
+  const sizes = (r.sizes || []).join(', ') || '—';
+  const colors = (r.colors || []).join(', ') || '—';
+  document.getElementById('req-summary').innerHTML = `
+    <div><span class="label">Description:</span> ${r.description || '—'}</div>
+    <div><span class="label">Sizes:</span> ${sizes} &nbsp; <span class="label">Colors:</span> ${colors}</div>
+    <div><span class="label">Stock:</span> ${r.stock}</div>
+  `;
+}
+
+function closeModal() {
+  document.getElementById('review-modal').classList.remove('open');
+  activeRequest = null;
+}
+
+function buildFormData() {
+  const fd = new FormData();
+  const margin = document.getElementById('margin-input').value;
+  const mrp = document.getElementById('mrp-input').value;
+  if (margin !== '') fd.append('margin', margin);
+  if (mrp !== '') fd.append('mrp', mrp);
+  const fileInput = document.getElementById('ai-image-input');
+  if (fileInput.files[0]) fd.append('admin_image', fileInput.files[0]);
+  return fd;
+}
+
+async function saveReview() {
+  if (!activeRequest) return;
+  const btn = document.getElementById('save-btn');
+  btn.disabled = true; btn.textContent = 'Saving...';
+  try {
+    const fd = buildFormData();
+    const updated = await fetch(`/api/requests/admin/${activeRequest.id}`, { method: 'PUT', body: fd });
+    if (!updated.ok) { const err = await updated.json(); throw new Error(err.detail || 'Failed'); }
+    const data = await updated.json();
+    activeRequest = data;
+    openReview(data);
+    showToast('Saved ✅');
+    loadRequests();
+  } catch(e) {
+    document.getElementById('modal-alert').innerHTML = `<div class="alert alert-danger">⚠️ ${e.message}</div>`;
+  }
+  btn.disabled = false; btn.textContent = 'Save (Margin / MRP / Image)';
+}
+
+async function acceptRequest() {
+  if (!activeRequest) return;
+  const btn = document.getElementById('accept-btn');
+  btn.disabled = true; btn.textContent = 'Processing...';
+  try {
+    // Save any unsaved margin/MRP/image edits first
+    const fd = buildFormData();
+    const hasEdits = [...fd.keys()].length > 0;
+    if (hasEdits) {
+      const upd = await fetch(`/api/requests/admin/${activeRequest.id}`, { method: 'PUT', body: fd });
+      if (!upd.ok) { const err = await upd.json(); throw new Error(err.detail || 'Failed to save changes'); }
+    }
+    await apiFetch(`/api/requests/admin/${activeRequest.id}/accept`, { method: 'POST' });
+    showToast('Accepted — now live! ✅');
+    closeModal();
+    loadRequests();
+  } catch(e) {
+    document.getElementById('modal-alert').innerHTML = `<div class="alert alert-danger">⚠️ ${e.message}</div>`;
+  }
+  btn.disabled = false; btn.textContent = 'Accept → Make Live';
+}
+
+async function rejectRequest() {
+  if (!activeRequest) return;
+  if (!confirm(`Reject and permanently delete "${activeRequest.name}"? This cannot be undone.`)) return;
+  try {
+    await apiFetch(`/api/requests/admin/${activeRequest.id}`, { method: 'DELETE' });
+    showToast('Request rejected & deleted', 'warning');
+    closeModal();
+    loadRequests();
+  } catch(e) {
+    showToast(e.message || 'Failed to reject', 'error');
+  }
+}
+
+async function logout() {
+  await apiFetch('/api/auth/logout', { method: 'POST' });
+  window.location = '/admin/login';
+}
+
+loadRequests();
+</script>
+</body>
+</html>

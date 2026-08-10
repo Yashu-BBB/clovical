@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from utils.auth_utils import get_admin_from_request
+from utils.auth_utils import get_admin_from_request, get_shopkeeper_from_request
 from utils.nimbuspost import is_configured as nimbuspost_is_configured
 
 router = APIRouter()
@@ -82,3 +82,37 @@ async def admin_analytics(request: Request):
     if not get_admin_from_request(request):
         return RedirectResponse("/admin/login")
     return render("admin/analytics.html", request)
+
+
+@router.get("/admin/requests", response_class=HTMLResponse)
+async def admin_requests_page(request: Request):
+    if not get_admin_from_request(request):
+        return RedirectResponse("/admin/login")
+    return render("admin/requests.html", request)
+
+@router.get("/admin/stock", response_class=HTMLResponse)
+async def admin_stock_page(request: Request):
+    if not get_admin_from_request(request):
+        return RedirectResponse("/admin/login")
+    return render("admin/stock.html", request)
+
+
+# ─── Shopkeeper Panel Pages ─────────────────────────────────────────────────
+
+@router.get("/shopkeeper/login", response_class=HTMLResponse)
+async def shopkeeper_login_page(request: Request):
+    if get_shopkeeper_from_request(request):
+        return RedirectResponse("/shopkeeper/products")
+    return render("shopkeeper/login.html", request)
+
+@router.get("/shopkeeper/products", response_class=HTMLResponse)
+async def shopkeeper_products_page(request: Request):
+    if not get_shopkeeper_from_request(request):
+        return RedirectResponse("/shopkeeper/login")
+    return render("shopkeeper/products.html", request)
+
+@router.get("/shopkeeper/orders", response_class=HTMLResponse)
+async def shopkeeper_orders_page(request: Request):
+    if not get_shopkeeper_from_request(request):
+        return RedirectResponse("/shopkeeper/login")
+    return render("shopkeeper/orders.html", request)

@@ -26,10 +26,10 @@
       <div class="table-wrap">
         <table>
           <thead>
-            <tr><th>Code</th><th>Shop Name</th><th>Shopkeeper</th><th>Contact</th><th>Pickup Address</th><th>Products Listed</th><th>Total Sold</th><th>Actions</th></tr>
+            <tr><th>Code</th><th>Shop Name</th><th>Shopkeeper</th><th>Contact</th><th>Pickup Address</th><th>Products Listed</th><th>Total Sold</th><th>Panel Login</th><th>Actions</th></tr>
           </thead>
           <tbody id="sk-body">
-            <tr><td colspan="8" style="text-align:center;padding:32px;color:var(--muted)">Loading...</td></tr>
+            <tr><td colspan="9" style="text-align:center;padding:32px;color:var(--muted)">Loading...</td></tr>
           </tbody>
         </table>
       </div>
@@ -124,6 +124,29 @@
   </div>
 </div>
 
+<!-- Panel Login Credentials Modal -->
+<div class="modal-overlay" id="cred-modal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <h3 class="modal-title">Shopkeeper Panel Login</h3>
+      <button class="modal-close" onclick="closeCredModal()">×</button>
+    </div>
+    <div id="cred-alert"></div>
+    <div class="form-group">
+      <label class="form-label">Username</label>
+      <input class="form-control" id="cred-username" placeholder="e.g. priya_fashion">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Password</label>
+      <input class="form-control" id="cred-password" type="password" placeholder="Min. 6 characters">
+    </div>
+    <div style="display:flex;gap:12px;margin-top:8px">
+      <button class="btn btn-primary btn-lg" style="flex:1" id="cred-submit-btn" onclick="saveCredentials()">Save Login</button>
+      <button class="btn btn-outline" onclick="closeCredModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast-container"></div>
 <script src="/static/js/shared.js"></script>
 <script>
@@ -134,7 +157,7 @@ async function loadShopkeepers() {
     const sks = await apiFetch("/api/shopkeepers/admin/all");
     const body = document.getElementById("sk-body");
     if (!sks.length) {
-      body.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--muted)">No shopkeepers yet.</td></tr>';
+      body.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:32px;color:var(--muted)">No shopkeepers yet.</td></tr>';
       return;
     }
     body.innerHTML = sks.map(s => `
@@ -149,8 +172,10 @@ async function loadShopkeepers() {
         </td>
         <td>${s.total_products}</td>
         <td>${s.total_sold}</td>
+        <td>${s.has_login ? `<span class="badge badge-success">Active</span>` : `<span class="badge badge-muted">Not set</span>`}</td>
         <td>
           <button class="btn btn-outline btn-sm" onclick='openEdit(${JSON.stringify(s)})'>Edit</button>
+          <button class="btn btn-outline btn-sm" onclick="openCredentials(${s.id}, ${s.has_login})">${s.has_login ? 'Reset Login' : 'Set Login'}</button>
           <button class="btn btn-danger btn-sm" onclick="deleteSK(${s.id},'${s.shop_name}')">Delete</button>
         </td>
       </tr>
@@ -243,6 +268,46 @@ async function deleteSK(id, name) {
 async function logout() {
   await apiFetch("/api/auth/logout", { method: "POST" });
   window.location = "/admin/login";
+}
+
+let credSkId = null;
+
+function openCredentials(skId, hasLogin) {
+  credSkId = skId;
+  document.getElementById('cred-username').value = '';
+  document.getElementById('cred-password').value = '';
+  document.getElementById('cred-alert').innerHTML = hasLogin
+    ? '<div class="alert alert-warning">This resets their existing login — the old username/password will stop working.</div>' : '';
+  document.getElementById('cred-modal').classList.add('open');
+}
+
+function closeCredModal() { document.getElementById('cred-modal').classList.remove('open'); credSkId = null; }
+
+async function saveCredentials() {
+  const username = document.getElementById('cred-username').value.trim();
+  const password = document.getElementById('cred-password').value;
+  if (!username || username.length < 3) {
+    document.getElementById('cred-alert').innerHTML = '<div class="alert alert-danger">Username must be at least 3 characters</div>';
+    return;
+  }
+  if (!password || password.length < 6) {
+    document.getElementById('cred-alert').innerHTML = '<div class="alert alert-danger">Password must be at least 6 characters</div>';
+    return;
+  }
+  const btn = document.getElementById('cred-submit-btn');
+  btn.disabled = true; btn.textContent = 'Saving...';
+  try {
+    await apiFetch(`/api/shopkeepers/admin/${credSkId}/credentials`, {
+      method: 'PUT',
+      body: JSON.stringify({ username, password })
+    });
+    showToast('Panel login saved ✅');
+    closeCredModal();
+    loadShopkeepers();
+  } catch(e) {
+    document.getElementById('cred-alert').innerHTML = `<div class="alert alert-danger">⚠️ ${e.message}</div>`;
+  }
+  btn.disabled = false; btn.textContent = 'Save Login';
 }
 
 loadShopkeepers();

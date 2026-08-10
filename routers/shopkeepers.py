@@ -2,7 +2,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from utils.db import supabase_admin, run_query, run_blocking
-from utils.auth_utils import require_admin
+from utils.auth_utils import require_admin, hash_password
 from utils.nimbuspost import register_pickup_address
 from utils.cache import cache_get, cache_set, two_layer_get, two_layer_set, two_layer_clear_pattern
 
@@ -28,6 +28,11 @@ class ShopkeeperUpdate(BaseModel):
     pincode: str | None = None
     city: str | None = None
     state: str | None = None
+
+
+class ShopkeeperCredentials(BaseModel):
+    username: str = Field(..., min_length=3, max_length=50)
+    password: str = Field(..., min_length=6, max_length=100)
 
 
 def _maybe_register_pickup(shopkeeper: dict) -> str | None:
@@ -65,6 +70,8 @@ async def list_shopkeepers(admin=Depends(require_admin)):
             sk["total_products"] = prods.count or 0
             sk["total_sold"] = sold.count or 0
             sk["code"] = code
+            sk["has_login"] = bool(sk.get("username"))
+            sk.pop("password", None)  # never leak the hash to the admin client
 
         await cache_set(cache_key, shopkeepers, ttl=900)
         return shopkeepers
@@ -152,3 +159,52 @@ async def shopkeepers_dropdown(admin=Depends(require_admin)):
     except Exception as e:
         logger.error(f"Shopkeeper dropdown failed: {e}", exc_info=True)
         return []
+
+
+# ─── Shopkeeper Panel Login Credentials ────────────────────────────────────
+# A shopkeeper only gets access to the Shopkeeper Panel once an admin sets a
+# username/password for them here — there is no self-registration flow.
+
+@router.put("/admin/{sk_id}/credentials")
+async def set_shopkeeper_credentials(sk_id: int, data: ShopkeeperCredentials, admin=Depends(require_admin)):
+    try:
+        existing = await run_query(supabase_admin.table("shopkeepers").select("id").eq("id", sk_id).single())
+        if not existing.data:
+            raise HTTPException(status_code=404, detail="Shopkeeper not found")
+
+        # Username must be unique across shopkeepers
+        clash = await run_query(
+            supabase_admin.table("shopkeepers").select("id").eq("username", data.username).neq("id", sk_id)
+        )
+        if clash.data:
+            raise HTTPException(status_code=400, detail="That username is already taken")
+
+        await run_query(supabase_admin.table("shopkeepers").update({
+            "username": data.username,
+            "password": hash_password(data.password),
+        }).eq("id", sk_id))
+
+        await two_layer_clear_pattern("shopkeepers:")
+        logger.info(f"Shopkeeper panel credentials set for shopkeeper {sk_id} by admin {admin['sub']}")
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to set shopkeeper credentials for {sk_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to set credentials")
+
+
+@router.delete("/admin/{sk_id}/credentials")
+async def revoke_shopkeeper_credentials(sk_id: int, admin=Depends(require_admin)):
+    """Revokes panel access without deleting the shopkeeper record itself."""
+    try:
+        await run_query(supabase_admin.table("shopkeepers").update({
+            "username": None,
+            "password": None,
+        }).eq("id", sk_id))
+        await two_layer_clear_pattern("shopkeepers:")
+        logger.info(f"Shopkeeper panel credentials revoked for shopkeeper {sk_id} by admin {admin['sub']}")
+        return {"success": True}
+    except Exception as e:
+        logger.error(f"Failed to revoke shopkeeper credentials for {sk_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to revoke credentials")

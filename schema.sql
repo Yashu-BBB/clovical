@@ -179,11 +179,23 @@ CREATE INDEX IF NOT EXISTS idx_categories_gender ON categories(gender);
 
 -- ═══════════════════════════════════════════════════
 -- clovical DATABASE SCHEMA
--- Run in Supabase SQL Editor
+-- Regenerated from a live introspection of the Supabase project
+-- (information_schema.columns / table_constraints / pg_indexes)
+-- on 2026-08-09. This reflects what's ACTUALLY in the database,
+-- not just what earlier .sql files intended to create.
+-- Safe to re-run: every statement uses IF NOT EXISTS.
 -- ═══════════════════════════════════════════════════
 
--- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- ─── ADMINS ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS admins (
+    id SERIAL PRIMARY KEY,
+    username TEXT NOT NULL,
+    password TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT admins_username_key UNIQUE (username)
+);
 
 -- ─── SHOPKEEPERS ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS shopkeepers (
@@ -191,8 +203,25 @@ CREATE TABLE IF NOT EXISTS shopkeepers (
     shop_name TEXT NOT NULL,
     shopkeeper_name TEXT NOT NULL,
     contact TEXT NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    address TEXT,
+    pincode TEXT,
+    city TEXT,
+    state TEXT,
+    nimbuspost_pickup_id TEXT
 );
+
+-- ─── CATEGORIES ─────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS categories (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    icon TEXT NOT NULL DEFAULT '🏷️',
+    gender TEXT NOT NULL CHECK (gender IN ('Boys','Girls')),
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT categories_name_key UNIQUE (name)
+);
+CREATE INDEX IF NOT EXISTS idx_categories_gender ON categories (gender);
 
 -- ─── PRODUCTS ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS products (
@@ -207,17 +236,24 @@ CREATE TABLE IF NOT EXISTS products (
     category TEXT,
     featured BOOLEAN DEFAULT FALSE,
     stock INTEGER DEFAULT 1,
-    -- Per-variant stock counts, e.g. {"S": 4, "M": 0, "L": 2} / {"Red": 3, "Black": 0}.
-    -- A size/color that is absent from the map has no per-variant restriction
-    -- (falls back to the overall `stock` count) — this keeps existing products
-    -- that were never given variant-level stock working exactly as before.
-    size_stock JSONB DEFAULT '{}',
-    color_stock JSONB DEFAULT '{}',
-    shopkeeper_id INTEGER REFERENCES shopkeepers(id) ON DELETE SET NULL,
+    shopkeeper_id INTEGER REFERENCES shopkeepers(id),
     shopkeeper_code TEXT,
     view_count INTEGER DEFAULT 0,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    gender TEXT DEFAULT 'Girls' CHECK (gender IN ('Boys','Girls')),
+    mrp NUMERIC(10,2),
+    size_chart JSONB,
+    images JSONB DEFAULT '[]',
+    -- Per-variant stock counts, e.g. {"S": 4, "M": 0, "L": 2} / {"Red": 3, "Black": 0}.
+    -- A size/color absent from the map has no per-variant restriction and
+    -- falls back to the overall `stock` count above. Already live in this DB.
+    size_stock JSONB DEFAULT '{}',
+    color_stock JSONB DEFAULT '{}'
 );
+CREATE INDEX IF NOT EXISTS idx_products_featured ON products (featured);
+CREATE INDEX IF NOT EXISTS idx_products_category ON products (category);
+CREATE INDEX IF NOT EXISTS idx_products_gender ON products (gender);
+CREATE INDEX IF NOT EXISTS idx_products_images ON products USING GIN (images);
 
 -- ─── ORDERS ───────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS orders (
@@ -243,121 +279,47 @@ CREATE TABLE IF NOT EXISTS orders (
     review_rating INTEGER CHECK (review_rating BETWEEN 1 AND 5),
     refund_status TEXT DEFAULT 'none' CHECK (refund_status IN ('none','pending','processed')),
     agent_state JSONB DEFAULT '{}',
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    customer_pincode TEXT,
+    nimbuspost_shipment_id TEXT,
+    nimbuspost_awb TEXT,
+    label_url TEXT,
+    shipping_status TEXT,
+    delivery_fee NUMERIC(10,2) DEFAULT 0,
+    total_amount NUMERIC(10,2),
+    product_image TEXT,
+    package_pdf_status TEXT,
+    package_pdf_base64 TEXT,
+    package_pdf_filename TEXT,
+    package_pdf_generated_at TIMESTAMPTZ
 );
+CREATE INDEX IF NOT EXISTS idx_orders_customer_phone ON orders (customer_phone);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status);
+CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders (created_at);
+CREATE INDEX IF NOT EXISTS idx_orders_nimbuspost_awb ON orders (nimbuspost_awb);
+CREATE INDEX IF NOT EXISTS idx_orders_package_pdf_status ON orders (package_pdf_status);
 
--- ─── ADMINS ───────────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS admins (
+-- ─── REVIEWS ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS reviews (
     id SERIAL PRIMARY KEY,
-    username TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL,
+    order_id UUID REFERENCES orders(id),
+    customer_phone TEXT NOT NULL,
+    rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ─── VISITORS ─────────────────────────────────────────────────────────────
+-- ─── SETTINGS ───────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ─── VISITORS ───────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS visitors (
     id SERIAL PRIMARY KEY,
     page TEXT NOT NULL,
     ip_hash TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
-
--- ─── REVIEWS ──────────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS reviews (
-    id SERIAL PRIMARY KEY,
-    order_id UUID REFERENCES orders(id) ON DELETE CASCADE,
-    customer_phone TEXT NOT NULL,
-    rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- ─── ROW LEVEL SECURITY ───────────────────────────────────────────────────
-ALTER TABLE shopkeepers ENABLE ROW LEVEL SECURITY;
-ALTER TABLE products ENABLE ROW LEVEL SECURITY;
-ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
-ALTER TABLE admins ENABLE ROW LEVEL SECURITY;
-ALTER TABLE visitors ENABLE ROW LEVEL SECURITY;
-ALTER TABLE reviews ENABLE ROW LEVEL SECURITY;
-
--- Products: public can only read (without shopkeeper_price)
--- NOTE: shopkeeper_price is excluded at API level, not RLS level
--- All writes go through service role key only.
-
--- Public read on products
-CREATE POLICY "public_read_products"
-    ON products FOR SELECT
-    USING (true);
-
--- No public write
--- (All other operations require service role)
-
--- ─── INDEXES ──────────────────────────────────────────────────────────────
-CREATE INDEX IF NOT EXISTS idx_products_featured ON products(featured);
-CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
-CREATE INDEX IF NOT EXISTS idx_orders_customer_phone ON orders(customer_phone);
-CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
-CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
-CREATE INDEX IF NOT EXISTS idx_visitors_created_at ON visitors(created_at);
-
--- ─── STORAGE BUCKET ───────────────────────────────────────────────────────
--- Run via Supabase Dashboard → Storage → New Bucket
--- Name: product-images
--- Public: true
--- (Cannot be created via SQL, do it in Supabase dashboard)
-
--- ─── SAMPLE ADMIN (change password!) ─────────────────────────────────────
--- Password: admin123 (bcrypt hash — change via admin panel after setup)
-INSERT INTO admins (username, password)
-VALUES ('admin', '$2b$12$KIX0.GGqK4R2WPNiPdFJHO0sMQ8WnmEjRaJ.8jN5tPSaP.aA8bHRS')
-ON CONFLICT (username) DO NOTHING;
--- ═══════════════════════════════════════════════════
--- clovical SCHEMA UPDATE — Categories + Gender
--- Run in Supabase SQL Editor
--- ═══════════════════════════════════════════════════
-
--- Add gender column to products
-ALTER TABLE products ADD COLUMN IF NOT EXISTS gender TEXT DEFAULT 'Girls' CHECK (gender IN ('Boys', 'Girls'));
-
--- Create categories table
-CREATE TABLE IF NOT EXISTS categories (
-    id SERIAL PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE,
-    icon TEXT NOT NULL DEFAULT '🏷️',
-    gender TEXT NOT NULL CHECK (gender IN ('Boys', 'Girls')),
-    sort_order INTEGER DEFAULT 0,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Enable RLS
-ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
-
--- Public can read categories
-CREATE POLICY "public_read_categories" ON categories FOR SELECT USING (true);
-
--- Insert default categories
-INSERT INTO categories (name, icon, gender, sort_order) VALUES
--- Girls
-('Kurti', '👘', 'Girls', 1),
-('Saree', '🥻', 'Girls', 2),
-('Lehenga', '✨', 'Girls', 3),
-('Anarkali', '🌸', 'Girls', 4),
-('Dress', '👗', 'Girls', 5),
-('Top', '👚', 'Girls', 6),
-('Maxi', '💃', 'Girls', 7),
-('Co-ord Set', '🎀', 'Girls', 8),
-('Gown', '👸', 'Girls', 9),
-('Ethnic Wear', '🪷', 'Girls', 10),
--- Boys
-('T-Shirt', '👕', 'Boys', 1),
-('Shirt', '👔', 'Boys', 2),
-('Jeans', '👖', 'Boys', 3),
-('Track Pants', '🏃', 'Boys', 4),
-('Shorts', '🩳', 'Boys', 5),
-('Ethnic Kurta', '🧥', 'Boys', 6),
-('Hoodie', '🧣', 'Boys', 7),
-('Formal Wear', '💼', 'Boys', 8)
-ON CONFLICT (name) DO NOTHING;
-
--- Index for fast gender filtering
-CREATE INDEX IF NOT EXISTS idx_products_gender ON products(gender);
-CREATE INDEX IF NOT EXISTS idx_categories_gender ON categories(gender);
+CREATE INDEX IF NOT EXISTS idx_visitors_created_at ON visitors (created_at);

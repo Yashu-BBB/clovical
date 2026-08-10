@@ -525,3 +525,85 @@ async def delete_product(product_id: str, admin=Depends(require_admin)):
     except Exception as e:
         logger.error(f"Failed to delete product: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to delete product")
+
+
+# ─── STOCK / SOLD TRACKING (space-saving, text-only) ───────────────────────
+# For marking offline (in-shop) sales against an existing product. Deliberately
+# returns/accepts no image data at all — just enough fields to identify the
+# product and adjust its stock, so this list stays lightweight even with a
+# large catalog.
+
+STOCK_FIELDS = "id,name,category,shopkeeper_code,stock,size_stock,color_stock"
+
+
+@router.get("/admin/stock-list")
+async def admin_stock_list(admin=Depends(require_admin)):
+    cache_key = "products:stock-list"
+    try:
+        cached = await two_layer_get(cache_key)
+        if cached is not None:
+            return cached
+        res = await run_query(
+            supabase_admin.table("products").select(STOCK_FIELDS).order("name")
+        )
+        data = res.data or []
+        await two_layer_set(cache_key, data, redis_ttl=300, mem_ttl=30)
+        return data
+    except Exception as e:
+        logger.error(f"Failed to fetch stock list: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch stock list")
+
+
+class StockUpdate(BaseModel):
+    stock: Optional[int] = None
+    size_stock: Optional[dict] = None
+    color_stock: Optional[dict] = None
+
+
+@router.put("/admin/stock/{product_id}")
+async def admin_update_stock(product_id: str, data: StockUpdate, admin=Depends(require_admin)):
+    """Text/number-only stock update — e.g. for recording an offline sale
+    made at the shopkeeper's physical shop. Never touches image fields."""
+    try:
+        updates = {}
+        if data.stock is not None:
+            updates["stock"] = max(0, data.stock)
+        if data.size_stock is not None:
+            updates["size_stock"] = data.size_stock
+        if data.color_stock is not None:
+            updates["color_stock"] = data.color_stock
+        if not updates:
+            raise HTTPException(status_code=400, detail="No fields to update")
+
+        res = await run_query(supabase_admin.table("products").update(updates).eq("id", product_id))
+        await cache_clear_pattern("products:*")
+        await two_layer_clear_pattern("products:filter-options:")
+        mem_clear_pattern("product:")
+        logger.info(f"Stock updated for product {product_id} by admin {admin['sub']}: {updates}")
+        return res.data[0] if res.data else {}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update stock for {product_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to update stock")
+
+
+@router.post("/admin/stock/{product_id}/sold")
+async def admin_mark_sold(product_id: str, qty: int = 1, admin=Depends(require_admin)):
+    """Quick 'mark N sold' action — decrements overall stock by qty (floors at 0)."""
+    try:
+        res = await run_query(supabase_admin.table("products").select("stock").eq("id", product_id).single())
+        if not res.data:
+            raise HTTPException(status_code=404, detail="Product not found")
+        new_stock = max(0, (res.data.get("stock") or 0) - max(1, qty))
+        await run_query(supabase_admin.table("products").update({"stock": new_stock}).eq("id", product_id))
+        await cache_clear_pattern("products:*")
+        await two_layer_clear_pattern("products:filter-options:")
+        mem_clear_pattern("product:")
+        logger.info(f"Product {product_id} marked sold (-{qty}) by admin {admin['sub']}, new stock={new_stock}")
+        return {"success": True, "stock": new_stock}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to mark sold for {product_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to update stock")

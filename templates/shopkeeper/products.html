@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Products — Shopkeeper Panel</title>
+  <link rel="stylesheet" href="/static/css/shared.css">
+  <link rel="stylesheet" href="/static/css/admin.css">
+  <style>
+    .tab-bar { display:flex; gap:8px; margin-bottom:20px; border-bottom:2px solid var(--border); }
+    .tab-btn { padding:10px 18px; border:none; background:none; font-family:var(--font-body); font-size:0.92rem; font-weight:600; color:var(--muted); cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px; }
+    .tab-btn.active { color:#0A0A0A; border-bottom-color:#0A0A0A; }
+    .tab-panel { display:none; }
+    .tab-panel.active { display:block; }
+    .req-thumb, .prod-thumb { width:46px; height:58px; object-fit:cover; border-radius:6px; border:1px solid var(--border); }
+    .thumb-placeholder { width:46px; height:58px; border-radius:6px; border:1px dashed var(--border); display:flex; align-items:center; justify-content:center; font-size:0.7rem; color:var(--muted); background:#FAFAFA; }
+    .upload-warning { background:#FFF8E1; border:1px solid #F0D98C; border-radius:8px; padding:10px 14px; font-size:0.82rem; color:#6B5C0E; margin-bottom:10px; }
+    .img-preview { width:140px; height:170px; object-fit:cover; border-radius:10px; margin-top:8px; display:none; border:1px solid var(--border); }
+    .variant-stock-rows { display:flex; flex-direction:column; gap:6px; margin-top:8px; }
+    .variant-stock-row { display:flex; align-items:center; gap:10px; }
+    .variant-stock-row .vs-label { min-width:60px; font-weight:600; font-size:0.85rem; }
+    .variant-stock-row input { width:80px; padding:5px 8px; border:2px solid var(--border); border-radius:6px; }
+    .gender-toggle { display:flex; gap:10px; margin-top:6px; }
+    .gender-opt { flex:1; padding:10px; text-align:center; border:2px solid var(--border); border-radius:10px; cursor:pointer; font-weight:600; }
+    .gender-opt.selected { border-color:#0A0A0A; background:#F3F0FF; }
+  </style>
+</head>
+<body>
+<div class="admin-layout">
+  {% set active = 'products' %}
+  {% include 'shopkeeper/_sidebar.html' %}
+
+  <div class="admin-main">
+    <div class="admin-topbar">
+      <div style="display:flex;align-items:center;gap:12px">
+        <button class="sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
+        <span class="admin-topbar-title">My Products</span>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="openAddModal()">+ Add Product</button>
+    </div>
+
+    <div class="admin-content">
+      <div class="tab-bar">
+        <button class="tab-btn active" data-tab="requests" onclick="switchTab('requests')">My Requests</button>
+        <button class="tab-btn" data-tab="live" onclick="switchTab('live')">Live Products</button>
+      </div>
+
+      <div class="tab-panel active" id="tab-requests">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Photo</th><th>Product</th><th>Category</th><th>Your Price</th><th>Stock</th><th>Status</th><th>Submitted</th></tr></thead>
+            <tbody id="requests-body"><tr><td colspan="7" style="text-align:center;padding:32px;color:var(--muted)">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="tab-live">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Photo</th><th>Product</th><th>Category</th><th>Your Price</th><th>Stock</th></tr></thead>
+            <tbody id="live-body"><tr><td colspan="5" style="text-align:center;padding:32px;color:var(--muted)">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add Product Request Modal -->
+<div class="modal-overlay" id="add-modal">
+  <div class="modal" style="max-width:600px;max-height:90vh;overflow-y:auto">
+    <div class="modal-header">
+      <h3 class="modal-title">Add Product</h3>
+      <button class="modal-close" onclick="closeAddModal()">×</button>
+    </div>
+    <div id="modal-alert"></div>
+
+    <form id="request-form">
+      <div class="form-group">
+        <label class="form-label">Gender *</label>
+        <div class="gender-toggle">
+          <div class="gender-opt selected" id="opt-Girls" onclick="selectGender('Girls')">Girls</div>
+          <div class="gender-opt" id="opt-Boys" onclick="selectGender('Boys')">Boys</div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Category *</label>
+        <select class="form-control" id="category-select" required></select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Product Name *</label>
+        <input class="form-control" id="name-input" maxlength="200" required>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Description</label>
+        <textarea class="form-control" id="description-input" rows="3" maxlength="2000"></textarea>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Your Price (₹) *</label>
+        <input class="form-control" type="number" min="1" step="0.01" id="price-input" placeholder="What you'll be paid per unit" required>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Overall Stock *</label>
+        <input class="form-control" type="number" min="1" id="stock-input" value="1" required>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Sizes (comma separated) *</label>
+        <input class="form-control" id="sizes-input" placeholder="e.g. S, M, L, XL" oninput="renderSizeStockRows()">
+        <div id="size-stock-rows" class="variant-stock-rows"></div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Colors (comma separated)</label>
+        <input class="form-control" id="colors-input" placeholder="e.g. Red, Black" oninput="renderColorStockRows()">
+        <div id="color-stock-rows" class="variant-stock-rows"></div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Product Photo *</label>
+        <div class="upload-warning">⚠️ Max file size: <strong>10MB</strong>. Please compress large photos before uploading — files above this limit will be rejected.</div>
+        <input class="form-control" type="file" id="image-input" accept="image/jpeg,image/png,image/webp" required onchange="previewImage(this)">
+        <img id="img-preview" class="img-preview" src="" alt="">
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-lg btn-block" id="submit-btn">Submit for Review</button>
+    </form>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+<script src="/static/js/shared.js"></script>
+<script>
+let selectedGender = 'Girls';
+let sizeStock = {};
+let colorStock = {};
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === `tab-${tab}`));
+}
+
+async function loadRequests() {
+  try {
+    const reqs = await apiFetch('/api/requests/mine');
+    const body = document.getElementById('requests-body');
+    if (!reqs.length) {
+      body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--muted)">No requests submitted yet.</td></tr>';
+      return;
+    }
+    body.innerHTML = reqs.map(r => `
+      <tr>
+        <td>${r.shopkeeper_image_thumb ? `<img class="req-thumb" src="${r.shopkeeper_image_thumb}">` : '<div class="thumb-placeholder">—</div>'}</td>
+        <td><strong>${r.name}</strong></td>
+        <td>${r.category || '—'}</td>
+        <td>₹${Number(r.shopkeeper_price).toLocaleString('en-IN')}</td>
+        <td>${r.stock}</td>
+        <td><span class="badge badge-${r.status === 'accepted' ? 'success' : r.status === 'rejected' ? 'danger' : 'gold'}">${r.status}</span></td>
+        <td>${new Date(r.created_at).toLocaleDateString('en-IN')}</td>
+      </tr>
+    `).join('');
+  } catch(e) {
+    showToast(e.message || 'Failed to load requests', 'error');
+  }
+}
+
+async function loadLiveProducts() {
+  try {
+    const prods = await apiFetch('/api/shopkeeper/products');
+    const body = document.getElementById('live-body');
+    if (!prods.length) {
+      body.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--muted)">No live products yet — accepted requests will show up here.</td></tr>';
+      return;
+    }
+    body.innerHTML = prods.map(p => `
+      <tr>
+        <td>${p.image ? `<img class="prod-thumb" src="${p.image}">` : '<div class="thumb-placeholder">—</div>'}</td>
+        <td><strong>${p.name}</strong></td>
+        <td>${p.category || '—'}</td>
+        <td>₹${Number(p.shopkeeper_price).toLocaleString('en-IN')}</td>
+        <td>${p.stock}</td>
+      </tr>
+    `).join('');
+  } catch(e) {
+    showToast(e.message || 'Failed to load your products', 'error');
+  }
+}
+
+function selectGender(g) {
+  selectedGender = g;
+  document.getElementById('opt-Girls').classList.toggle('selected', g === 'Girls');
+  document.getElementById('opt-Boys').classList.toggle('selected', g === 'Boys');
+  loadCategoryDropdown(g);
+}
+
+async function loadCategoryDropdown(gender) {
+  const sel = document.getElementById('category-select');
+  sel.innerHTML = '<option value="">Loading...</option>';
+  try {
+    const cats = await apiFetch(`/api/categories/?gender=${gender}`);
+    sel.innerHTML = '<option value="">Select category...</option>' +
+      cats.map(c => `<option value="${c.name}">${c.icon} ${c.name}</option>`).join('');
+  } catch(e) {
+    sel.innerHTML = '<option value="">Failed to load</option>';
+  }
+}
+
+function renderSizeStockRows() {
+  const sizes = document.getElementById('sizes-input').value.split(',').map(s => s.trim()).filter(Boolean);
+  document.getElementById('size-stock-rows').innerHTML = sizes.map(s => `
+    <div class="variant-stock-row">
+      <span class="vs-label">${s}</span>
+      <input type="number" min="0" value="${sizeStock[s] ?? 1}" onchange="sizeStock['${s}'] = parseInt(this.value)||0">
+    </div>
+  `).join('');
+  sizes.forEach(s => { if (sizeStock[s] === undefined) sizeStock[s] = 1; });
+}
+
+function renderColorStockRows() {
+  const colors = document.getElementById('colors-input').value.split(',').map(c => c.trim()).filter(Boolean);
+  document.getElementById('color-stock-rows').innerHTML = colors.map(c => `
+    <div class="variant-stock-row">
+      <span class="vs-label">${c}</span>
+      <input type="number" min="0" value="${colorStock[c] ?? 1}" onchange="colorStock['${c}'] = parseInt(this.value)||0">
+    </div>
+  `).join('');
+  colors.forEach(c => { if (colorStock[c] === undefined) colorStock[c] = 1; });
+}
+
+function previewImage(input) {
+  const file = input.files[0];
+  const preview = document.getElementById('img-preview');
+  if (!file) { preview.style.display = 'none'; return; }
+  if (file.size > 10 * 1024 * 1024) {
+    showToast('Image exceeds 10MB — please choose a smaller file', 'error');
+    input.value = '';
+    preview.style.display = 'none';
+    return;
+  }
+  preview.src = URL.createObjectURL(file);
+  preview.style.display = 'block';
+}
+
+function openAddModal() {
+  document.getElementById('request-form').reset();
+  document.getElementById('img-preview').style.display = 'none';
+  document.getElementById('modal-alert').innerHTML = '';
+  sizeStock = {}; colorStock = {};
+  document.getElementById('size-stock-rows').innerHTML = '';
+  document.getElementById('color-stock-rows').innerHTML = '';
+  selectGender('Girls');
+  document.getElementById('add-modal').classList.add('open');
+}
+
+function closeAddModal() { document.getElementById('add-modal').classList.remove('open'); }
+
+document.getElementById('request-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const btn = document.getElementById('submit-btn');
+  const sizes = document.getElementById('sizes-input').value.split(',').map(s => s.trim()).filter(Boolean);
+  if (!sizes.length) {
+    document.getElementById('modal-alert').innerHTML = '<div class="alert alert-danger">Please add at least one size</div>';
+    return;
+  }
+  const imageFile = document.getElementById('image-input').files[0];
+  if (!imageFile) {
+    document.getElementById('modal-alert').innerHTML = '<div class="alert alert-danger">Please upload a product photo</div>';
+    return;
+  }
+  if (imageFile.size > 10 * 1024 * 1024) {
+    document.getElementById('modal-alert').innerHTML = '<div class="alert alert-danger">Image exceeds 10MB limit</div>';
+    return;
+  }
+
+  btn.disabled = true; btn.textContent = 'Submitting...';
+
+  const colors = document.getElementById('colors-input').value.split(',').map(c => c.trim()).filter(Boolean);
+  const sizeStockOut = {}; sizes.forEach(s => { if (sizeStock[s] !== undefined) sizeStockOut[s] = sizeStock[s]; });
+  const colorStockOut = {}; colors.forEach(c => { if (colorStock[c] !== undefined) colorStockOut[c] = colorStock[c]; });
+
+  const fd = new FormData();
+  fd.append('name', document.getElementById('name-input').value);
+  fd.append('description', document.getElementById('description-input').value || '');
+  fd.append('shopkeeper_price', document.getElementById('price-input').value);
+  fd.append('stock', document.getElementById('stock-input').value);
+  fd.append('sizes', JSON.stringify(sizes));
+  fd.append('colors', JSON.stringify(colors));
+  fd.append('size_stock', JSON.stringify(sizeStockOut));
+  fd.append('color_stock', JSON.stringify(colorStockOut));
+  fd.append('category', document.getElementById('category-select').value);
+  fd.append('gender', selectedGender);
+  fd.append('image', imageFile);
+
+  try {
+    const res = await fetch('/api/requests/submit', { method: 'POST', body: fd });
+    if (!res.ok) { const err = await res.json(); throw new Error(err.detail || 'Failed to submit'); }
+    showToast('Submitted for review ✅');
+    closeAddModal();
+    loadRequests();
+  } catch(err) {
+    document.getElementById('modal-alert').innerHTML = `<div class="alert alert-danger">⚠️ ${err.message}</div>`;
+  }
+  btn.disabled = false; btn.textContent = 'Submit for Review';
+});
+
+async function skLogout() {
+  await apiFetch('/api/shopkeeper-auth/logout', { method: 'POST' });
+  window.location = '/shopkeeper/login';
+}
+
+loadCategoryDropdown('Girls');
+loadRequests();
+loadLiveProducts();
+</script>
+</body>
+</html>

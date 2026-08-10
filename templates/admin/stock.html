@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stock — clovical Admin</title>
+  <link rel="stylesheet" href="/static/css/shared.css">
+  <link rel="stylesheet" href="/static/css/admin.css">
+  <style>
+    .filter-bar { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:20px; }
+    .filter-bar input { padding:8px 12px; border:2px solid var(--border); border-radius:8px; font-size:0.9rem; flex:1; max-width:320px; }
+    .stock-num-input { width:70px; padding:5px 8px; border:2px solid var(--border); border-radius:6px; text-align:center; font-size:0.9rem; }
+    .variant-tags { display:flex; flex-wrap:wrap; gap:4px; font-size:0.75rem; }
+    .variant-tags span { background:#F3F0FF; border-radius:5px; padding:1px 6px; }
+  </style>
+</head>
+<body>
+<div class="admin-layout">
+  {% set active = 'stock' %}
+  {% include 'admin/_sidebar.html' %}
+
+  <div class="admin-main">
+    <div class="admin-topbar">
+      <div style="display:flex;align-items:center;gap:12px">
+        <button class="sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
+        <span class="admin-topbar-title">Stock &amp; Sold Tracking</span>
+      </div>
+    </div>
+
+    <div class="admin-content">
+      <div class="filter-bar">
+        <input id="search-input" placeholder="Search by product name or shopkeeper code..." oninput="renderTable()">
+      </div>
+
+      <div style="font-size:0.82rem;color:var(--muted);margin-bottom:12px">For recording sales made in person at a shopkeeper's shop. Text/number fields only — no photos loaded here.</div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Product</th><th>Shopkeeper</th><th>Category</th><th>Sizes/Colors in Stock</th><th>Overall Stock</th><th>Mark Sold</th></tr>
+          </thead>
+          <tbody id="stock-body">
+            <tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted)">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+<script src="/static/js/shared.js"></script>
+<script>
+let items = [];
+
+async function loadStock() {
+  try {
+    items = await apiFetch('/api/products/admin/stock-list');
+    renderTable();
+  } catch(e) {
+    showToast(e.message || 'Failed to load stock list', 'error');
+  }
+}
+
+function renderTable() {
+  const search = document.getElementById('search-input').value.trim().toLowerCase();
+  const filtered = !search ? items : items.filter(p =>
+    (p.name || '').toLowerCase().includes(search) || (p.shopkeeper_code || '').toLowerCase().includes(search)
+  );
+  const body = document.getElementById('stock-body');
+  if (!filtered.length) {
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted)">No products found.</td></tr>';
+    return;
+  }
+  body.innerHTML = filtered.map(p => {
+    const sizeTags = Object.entries(p.size_stock || {}).map(([k,v]) => `<span>${k}: ${v}</span>`).join('');
+    const colorTags = Object.entries(p.color_stock || {}).map(([k,v]) => `<span>${k}: ${v}</span>`).join('');
+    return `
+      <tr>
+        <td><strong>${p.name}</strong></td>
+        <td>${p.shopkeeper_code || '—'}</td>
+        <td>${p.category || '—'}</td>
+        <td><div class="variant-tags">${sizeTags}${colorTags || '<span style="color:var(--muted);background:none;padding:0">No variant-level stock set</span>'}</div></td>
+        <td><input class="stock-num-input" type="number" min="0" value="${p.stock}" onchange="updateStock('${p.id}', this.value)"></td>
+        <td>
+          <button class="btn btn-outline btn-sm" onclick="markSold('${p.id}', 1)">−1 (Sold)</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+async function updateStock(id, value) {
+  const n = parseInt(value, 10);
+  if (isNaN(n) || n < 0) { showToast('Enter a valid stock number', 'error'); loadStock(); return; }
+  try {
+    await apiFetch(`/api/products/admin/stock/${id}`, { method: 'PUT', body: JSON.stringify({ stock: n }) });
+    const item = items.find(p => p.id === id);
+    if (item) item.stock = n;
+    showToast('Stock updated ✅');
+  } catch(e) {
+    showToast(e.message || 'Failed to update stock', 'error');
+    loadStock();
+  }
+}
+
+async function markSold(id, qty) {
+  try {
+    const res = await apiFetch(`/api/products/admin/stock/${id}/sold?qty=${qty}`, { method: 'POST' });
+    const item = items.find(p => p.id === id);
+    if (item) item.stock = res.stock;
+    renderTable();
+    showToast(`Marked ${qty} sold ✅`);
+  } catch(e) {
+    showToast(e.message || 'Failed to mark sold', 'error');
+  }
+}
+
+async function logout() {
+  await apiFetch('/api/auth/logout', { method: 'POST' });
+  window.location = '/admin/login';
+}
+
+loadStock();
+</script>
+</body>
+</html>

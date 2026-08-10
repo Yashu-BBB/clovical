@@ -1,0 +1,18 @@
+<!-- Shopkeeper Sidebar Macro — included in all shopkeeper panel pages -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <h2>🏪 clovical</h2>
+    <p>Shopkeeper Panel</p>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="/shopkeeper/products" class="nav-item {% if active == 'products' %}active{% endif %}">
+      <span class="icon">👗</span> Products
+    </a>
+    <a href="/shopkeeper/orders" class="nav-item {% if active == 'orders' %}active{% endif %}">
+      <span class="icon">📦</span> Orders
+    </a>
+  </nav>
+  <div class="sidebar-footer">
+    <button class="logout-btn" onclick="skLogout()">🚪 Logout</button>
+  </div>
+</aside>

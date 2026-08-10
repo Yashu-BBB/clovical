@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from utils.db import supabase_admin, run_query, run_blocking
-from utils.auth_utils import require_admin
+from utils.auth_utils import require_admin, require_shopkeeper
 from utils.captcha import verify_turnstile
 from utils.whatsapp_utils import (
     send_text, send_image_url, send_upi_qr,
@@ -661,3 +661,75 @@ async def recent_orders(admin=Depends(require_admin)):
     except Exception as e:
         logger.error(f"Recent orders fetch failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch recent orders")
+
+
+# ─── SHOPKEEPER-FACING ──────────────────────────────────────────────────────
+# Minimal, PII-light view: shopkeepers see their own orders' product/status
+# info and what they get paid (shopkeeper_price), never the customer's
+# contact/address (fulfillment is handled centrally by the Clovical team)
+# and never our_price/profit. The product image is the SAME URL already
+# stored on the order (product_image, denormalized at order-creation time)
+# — no second copy is made for the shopkeeper view.
+
+@router.get("/shopkeeper/mine")
+async def shopkeeper_list_orders(status: str | None = None, shopkeeper=Depends(require_shopkeeper)):
+    try:
+        q = (
+            supabase_admin.table("orders")
+            .select("id,product_name,product_image,size,color,shopkeeper_price,payment_type,payment_status,status,tracking_id,courier_name,created_at")
+            .eq("shopkeeper_id", shopkeeper["shopkeeper_id"])
+            .order("created_at", desc=True)
+        )
+        if status:
+            q = q.eq("status", status)
+        res = await run_query(q)
+        return res.data or []
+    except Exception as e:
+        logger.error(f"Shopkeeper: list orders failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch orders")
+
+
+@router.get("/shopkeeper/{order_id}/pdf-data")
+async def shopkeeper_order_pdf_data(order_id: str, shopkeeper=Depends(require_shopkeeper)):
+    """
+    Same shape/format as the admin's /api/admin/orders/{id}/pdf-data (used
+    by the identical client-side jsPDF renderer), scoped to the requesting
+    shopkeeper's own order and stripped of customer PII and our_price/profit.
+    """
+    try:
+        res = await run_query(
+            supabase_admin.table("orders").select("*")
+            .eq("id", order_id).eq("shopkeeper_id", shopkeeper["shopkeeper_id"]).single()
+        )
+        order = res.data
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+
+        return {
+            "order": {
+                "id": order["id"],
+                "created_at": order.get("created_at"),
+                "status": order.get("status"),
+            },
+            "product": {
+                "image": order.get("product_image"),
+                "name": order.get("product_name"),
+                "size": order.get("size"),
+                "color": order.get("color"),
+                "shopkeeper_code": order.get("shopkeeper_code"),
+                "shopkeeper_price": order.get("shopkeeper_price"),
+            },
+            "payment": {
+                "type": order.get("payment_type"),
+                "status": order.get("payment_status"),
+            },
+            "shipping": {
+                "courier_name": order.get("courier_name"),
+                "tracking_id": order.get("tracking_id"),
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Shopkeeper PDF data fetch failed for order {order_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch order data")
