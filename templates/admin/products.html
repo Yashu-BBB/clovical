@@ -202,6 +202,12 @@
         <textarea class="form-control" name="description" rows="2" placeholder="Describe the product..."></textarea>
       </div>
 
+      <!-- Fabric -->
+      <div class="form-group">
+        <label class="form-label">Fabric</label>
+        <input class="form-control" name="fabric" maxlength="100" placeholder="e.g. Cotton, Rayon, Georgette">
+      </div>
+
       <!-- Prices -->
       <div class="form-row">
         <div class="form-group">
@@ -937,6 +943,7 @@ function openEdit(p) {
   const form = document.getElementById("product-form");
   form.name.value = p.name;
   form.description.value = p.description || "";
+  form.fabric.value = p.fabric || "";
   form.our_price.value = p.our_price;
   form.shopkeeper_price.value = p.shopkeeper_price;
   form.colors_raw.value = (p.colors || []).join(", ");
@@ -1026,6 +1033,7 @@ document.getElementById("product-form").addEventListener("submit", async functio
   const form = this;
   fd.append('name', form.name.value);
   fd.append('description', form.description.value || '');
+  fd.append('fabric', form.fabric?.value || '');
   fd.append('our_price', form.our_price.value);
   fd.append('shopkeeper_price', form.shopkeeper_price.value);
   fd.append('stock', form.stock.value);

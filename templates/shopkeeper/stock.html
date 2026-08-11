@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Stock — Shopkeeper Panel</title>
+  <link rel="stylesheet" href="/static/css/shared.css">
+  <link rel="stylesheet" href="/static/css/admin.css">
+  <style>
+    .filter-bar { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:20px; }
+    .filter-bar input { padding:8px 12px; border:2px solid var(--border); border-radius:8px; font-size:0.9rem; flex:1; max-width:320px; }
+    .stock-thumb { width:44px; height:56px; object-fit:cover; border-radius:6px; border:1px solid var(--border); }
+    .thumb-placeholder { width:44px; height:56px; border-radius:6px; border:1px dashed var(--border); display:flex; align-items:center; justify-content:center; font-size:0.7rem; color:var(--muted); background:#FAFAFA; }
+
+    /* ─── Comfortable +/- stepper (mobile-friendly, big tap targets) ────── */
+    .stepper { display:flex; align-items:center; gap:8px; }
+    .stepper button {
+      width:34px; height:34px; border-radius:8px; border:2px solid var(--border);
+      background:#fff; font-size:1.1rem; font-weight:700; cursor:pointer;
+      display:flex; align-items:center; justify-content:center; line-height:1;
+    }
+    .stepper button:hover { border-color:#0A0A0A; }
+    .stepper button:active { background:#F0F0F0; }
+    .stepper input {
+      width:52px; text-align:center; padding:6px 4px; border:2px solid var(--border);
+      border-radius:8px; font-size:0.95rem; font-weight:700;
+    }
+
+    /* ─── Product card (mobile-first, replaces a cramped table) ─────────── */
+    .stock-card {
+      display:flex; gap:14px; align-items:flex-start; background:#fff;
+      border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:14px;
+    }
+    .stock-card-info { flex:1; min-width:0; }
+    .stock-card-name { font-weight:700; font-size:1rem; margin-bottom:2px; }
+    .stock-card-meta { font-size:0.8rem; color:var(--muted); margin-bottom:12px; }
+    .stock-row-group { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:10px; }
+    .stock-row-group:last-child { margin-bottom:0; }
+    .stock-variant-label { font-weight:600; font-size:0.82rem; min-width:30px; }
+    .stock-variant { display:flex; align-items:center; gap:8px; border:1.5px solid var(--border); border-radius:10px; padding:6px 10px; background:#FAFAFA; }
+    .overall-stock-row { display:flex; align-items:center; gap:10px; margin-top:6px; }
+    .overall-stock-row label { font-size:0.82rem; font-weight:700; }
+
+    @media (max-width: 480px) {
+      .stock-card { flex-direction:column; }
+    }
+  </style>
+</head>
+<body>
+<div class="admin-layout">
+  {% set active = 'stock' %}
+  {% include 'shopkeeper/_sidebar.html' %}
+
+  <div class="admin-main">
+    <div class="admin-topbar">
+      <div style="display:flex;align-items:center;gap:12px">
+        <button class="sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
+        <span class="admin-topbar-title">My Stock</span>
+      </div>
+    </div>
+
+    <div class="admin-content">
+      <div class="filter-bar">
+        <input id="search-input" placeholder="Search your products..." oninput="renderList()">
+      </div>
+      <div id="stock-list"><div style="text-align:center;padding:32px;color:var(--muted)">Loading...</div></div>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+<script src="/static/js/shared.js"></script>
+<script>
+let items = [];
+
+async function loadStock() {
+  try {
+    items = await apiFetch('/api/shopkeeper/stock-list');
+    renderList();
+  } catch(e) {
+    showToast(e.message || 'Failed to load your stock', 'error');
+  }
+}
+
+function renderList() {
+  const search = document.getElementById('search-input').value.trim().toLowerCase();
+  const filtered = !search ? items : items.filter(p => (p.name || '').toLowerCase().includes(search) || (p.category || '').toLowerCase().includes(search));
+  const wrap = document.getElementById('stock-list');
+
+  if (!filtered.length) {
+    wrap.innerHTML = '<div style="text-align:center;padding:32px;color:var(--muted)">No live products yet — accepted requests will show up here.</div>';
+    return;
+  }
+
+  wrap.innerHTML = filtered.map(p => {
+    const sizes = Array.isArray(p.sizes) ? p.sizes : [];
+    const colors = Array.isArray(p.colors) ? p.colors : [];
+    const sizeStock = p.size_stock || {};
+    const colorStock = p.color_stock || {};
+
+    const sizeRows = sizes.filter(s => sizeStock[s] !== undefined).map(s => `
+      <div class="stock-variant">
+        <span class="stock-variant-label">${s}</span>
+        <div class="stepper">
+          <button type="button" onclick="stepVariant('${p.id}','size','${s}',-1)">−</button>
+          <input type="number" min="0" value="${sizeStock[s]}" id="size-${p.id}-${s}" onchange="setVariant('${p.id}','size','${s}', this.value)">
+          <button type="button" onclick="stepVariant('${p.id}','size','${s}',1)">+</button>
+        </div>
+      </div>`).join('');
+
+    const colorRows = colors.filter(c => colorStock[c] !== undefined).map(c => `
+      <div class="stock-variant">
+        <span class="stock-variant-label">${c}</span>
+        <div class="stepper">
+          <button type="button" onclick="stepVariant('${p.id}','color','${c}',-1)">−</button>
+          <input type="number" min="0" value="${colorStock[c]}" id="color-${p.id}-${c}" onchange="setVariant('${p.id}','color','${c}', this.value)">
+          <button type="button" onclick="stepVariant('${p.id}','color','${c}',1)">+</button>
+        </div>
+      </div>`).join('');
+
+    return `
+      <div class="stock-card">
+        ${p.image ? `<img class="stock-thumb" src="${p.image}">` : '<div class="thumb-placeholder">—</div>'}
+        <div class="stock-card-info">
+          <div class="stock-card-name">${p.name}</div>
+          <div class="stock-card-meta">${p.category || '—'}</div>
+
+          <div class="overall-stock-row">
+            <label>Overall Stock</label>
+            <div class="stepper">
+              <button type="button" onclick="stepOverall('${p.id}',-1)">−</button>
+              <input type="number" min="0" value="${p.stock}" id="overall-${p.id}" onchange="setOverall('${p.id}', this.value)">
+              <button type="button" onclick="stepOverall('${p.id}',1)">+</button>
+            </div>
+          </div>
+
+          ${sizeRows ? `<div class="stock-row-group" style="margin-top:12px">${sizeRows}</div>` : ''}
+          ${colorRows ? `<div class="stock-row-group">${colorRows}</div>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function findItem(id) { return items.find(p => p.id === id); }
+
+async function pushStockUpdate(id, payload) {
+  try {
+    const res = await apiFetch(`/api/shopkeeper/stock/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+    const item = findItem(id);
+    if (item) {
+      if (res.stock !== undefined) item.stock = res.stock;
+      if (res.size_stock !== undefined) item.size_stock = res.size_stock;
+      if (res.color_stock !== undefined) item.color_stock = res.color_stock;
+    }
+    showToast('Stock updated ✅');
+  } catch(e) {
+    showToast(e.message || 'Failed to update stock', 'error');
+    loadStock();
+  }
+}
+
+function setOverall(id, value) {
+  const n = Math.max(0, parseInt(value, 10) || 0);
+  pushStockUpdate(id, { stock: n });
+}
+function stepOverall(id, delta) {
+  const item = findItem(id);
+  const n = Math.max(0, (item?.stock || 0) + delta);
+  document.getElementById(`overall-${id}`).value = n;
+  pushStockUpdate(id, { stock: n });
+}
+
+function setVariant(id, kind, key, value) {
+  const item = findItem(id);
+  if (!item) return;
+  const n = Math.max(0, parseInt(value, 10) || 0);
+  const field = kind === 'size' ? 'size_stock' : 'color_stock';
+  const updated = { ...(item[field] || {}), [key]: n };
+  pushStockUpdate(id, { [field]: updated });
+}
+function stepVariant(id, kind, key, delta) {
+  const item = findItem(id);
+  if (!item) return;
+  const field = kind === 'size' ? 'size_stock' : 'color_stock';
+  const current = (item[field] || {})[key] || 0;
+  const n = Math.max(0, current + delta);
+  document.getElementById(`${kind}-${id}-${key}`).value = n;
+  const updated = { ...(item[field] || {}), [key]: n };
+  pushStockUpdate(id, { [field]: updated });
+}
+
+async function skLogout() {
+  await apiFetch('/api/shopkeeper-auth/logout', { method: 'POST' });
+  window.location = '/shopkeeper/login';
+}
+
+loadStock();
+</script>
+</body>
+</html>

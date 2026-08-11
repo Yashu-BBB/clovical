@@ -116,3 +116,9 @@ async def shopkeeper_orders_page(request: Request):
     if not get_shopkeeper_from_request(request):
         return RedirectResponse("/shopkeeper/login")
     return render("shopkeeper/orders.html", request)
+
+@router.get("/shopkeeper/stock", response_class=HTMLResponse)
+async def shopkeeper_stock_page(request: Request):
+    if not get_shopkeeper_from_request(request):
+        return RedirectResponse("/shopkeeper/login")
+    return render("shopkeeper/stock.html", request)

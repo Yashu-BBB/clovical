@@ -8,14 +8,83 @@
   <link rel="stylesheet" href="/static/css/shared.css">
   <link rel="stylesheet" href="/static/css/admin.css">
   <style>
+    /* ─── Requests Table ────────────────────────────────── */
     .filter-bar { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:20px; }
     .filter-bar select { padding:8px 12px; border:2px solid var(--border); border-radius:8px; font-size:0.9rem; }
     .req-thumb { width:44px; height:56px; object-fit:cover; border-radius:6px; border:1px solid var(--border); }
     .req-thumb-placeholder { width:44px; height:56px; border-radius:6px; border:1px dashed var(--border); display:flex; align-items:center; justify-content:center; font-size:0.75rem; color:var(--muted); background:#FAFAFA; }
-    .ai-img-preview { width:90px; height:110px; object-fit:cover; border-radius:8px; border:2px solid var(--border); margin-top:6px; }
-    .ai-img-wrap { display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap; }
-    .req-detail-col { display:flex; flex-direction:column; gap:6px; font-size:0.85rem; }
-    .req-detail-col .label { color:var(--muted); font-size:0.75rem; }
+
+    /* ─── Same visual language as the admin add-product modal ──────────── */
+    .img-preview { width:100%; max-height:200px; object-fit:cover; border-radius:10px; margin-top:8px; display:none; }
+
+    .multi-img-uploader { display:flex; flex-wrap:wrap; gap:10px; margin-top:8px; align-items:flex-start; }
+    .img-slot {
+      position:relative; width:80px; height:100px; border-radius:10px;
+      overflow:hidden; flex-shrink:0; background:#F5F5F5;
+      border:2px solid var(--border); cursor:grab;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .img-slot:active { cursor:grabbing; }
+    .img-slot.drag-over { border-color:var(--primary); box-shadow:0 0 0 2px rgba(0,0,0,0.15); }
+    .img-slot.is-main { border-color:#0A0A0A; }
+    .img-slot img { width:100%; height:100%; object-fit:cover; display:block; }
+    .img-slot-remove {
+      position:absolute; top:3px; right:3px; width:20px; height:20px;
+      background:rgba(0,0,0,0.65); color:#fff; border:none; border-radius:50%;
+      font-size:0.8rem; line-height:1; cursor:pointer; display:flex;
+      align-items:center; justify-content:center; z-index:2;
+    }
+    .img-slot-remove:hover { background:#C0392B; }
+    .img-slot-star {
+      position:absolute; bottom:3px; left:4px; font-size:0.65rem;
+      background:rgba(0,0,0,0.7); color:#FFD700; border-radius:3px;
+      padding:1px 4px; z-index:2; pointer-events:none;
+    }
+    .img-add-slot {
+      width:80px; height:100px; border-radius:10px; flex-shrink:0;
+      border:2px dashed var(--border); background:transparent;
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      gap:4px; cursor:pointer; font-size:0.7rem; color:#9B9B9B;
+      transition:border-color 0.2s, color 0.2s; font-family:var(--font-body);
+    }
+    .img-add-slot:hover { border-color:#0A0A0A; color:#0A0A0A; }
+    .img-add-slot .plus { font-size:1.4rem; line-height:1; }
+    .img-count-label { font-size:0.78rem; color:var(--muted); margin-top:6px; }
+
+    .size-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+    .size-chip {
+      padding: 6px 14px; border-radius: 8px; border: 2px solid var(--border);
+      font-weight: 600; font-size: 0.85rem; background: #fff; user-select: none;
+    }
+    .size-chip.selected { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+    .gender-toggle-field { display: flex; gap: 12px; margin-top: 6px; }
+    .gender-opt-readonly {
+      flex: 1; padding: 12px; border-radius: 10px; border: 2px solid var(--border);
+      text-align: center; font-weight: 700; background: #fff; opacity: .55;
+    }
+    .gender-opt-readonly.active-girls { border-color: #EC4899; background: #FDF2F8; color: #BE185D; opacity: 1; }
+    .gender-opt-readonly.active-boys { border-color: #3B82F6; background: #EFF6FF; color: #1D4ED8; opacity: 1; }
+
+    .size-chart-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; margin-top: 10px; }
+    #size-chart-table-ro { width: 100%; border-collapse: collapse; }
+    #size-chart-table-ro th, #size-chart-table-ro td { border-bottom: 1px solid var(--border); padding: 8px 10px; font-size: 0.85rem; }
+    #size-chart-table-ro th { background: #FAFAFA; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); text-align: left; }
+    #size-chart-table-ro tr:last-child td { border-bottom: none; }
+
+    .variant-stock-rows { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+    .variant-stock-row {
+      display: flex; align-items: center; gap: 6px;
+      border: 1.5px solid var(--border); border-radius: 8px; padding: 6px 10px;
+      background: #FAFAFA;
+    }
+    .variant-stock-row .variant-stock-label { font-weight: 600; font-size: 0.82rem; }
+    .variant-stock-row .variant-stock-val { font-size: 0.82rem; color: var(--muted); }
+
+    .readonly-field {
+      background: #FAFAFA !important; color: var(--text); cursor: default;
+    }
+    .locked-note { font-size: 0.72rem; color: var(--muted); font-weight: 400; }
   </style>
 </head>
 <body>
@@ -46,7 +115,7 @@
           <thead>
             <tr>
               <th>Photo</th><th>Product</th><th>Shopkeeper</th><th>Their Price</th>
-              <th>Margin</th><th>MRP</th><th>AI Image</th><th>Status</th><th>Actions</th>
+              <th>Our Price</th><th>MRP</th><th>Images</th><th>Status</th><th>Actions</th>
             </tr>
           </thead>
           <tbody id="requests-body">
@@ -58,48 +127,134 @@
   </div>
 </div>
 
-<!-- Review Modal -->
+<!-- Review Modal — same layout/fields as the admin add-product modal (see
+     templates/admin/products.html), fully prefilled from the shopkeeper's
+     request. Everything the shopkeeper submitted is shown read-only in the
+     identical widgets (gender toggle, size chips, size chart, etc); the
+     admin's only editable fields are Our Price, MRP, and the product
+     image(s) — same multi-image uploader used on the add-product form. -->
 <div class="modal-overlay" id="review-modal">
-  <div class="modal" style="max-width:640px">
+  <div class="modal" style="max-width:660px">
     <div class="modal-header">
       <h3 class="modal-title">Review Request</h3>
       <button class="modal-close" onclick="closeModal()">×</button>
     </div>
     <div id="modal-alert"></div>
 
-    <div class="ai-img-wrap">
-      <div>
-        <div class="req-detail-col"><span class="label">Shopkeeper's Photo</span></div>
-        <img id="sk-photo" class="ai-img-preview" src="" alt="">
-      </div>
-      <div>
-        <div class="req-detail-col"><span class="label">AI-Generated Replacement</span></div>
-        <img id="ai-photo" class="ai-img-preview" src="" style="display:none">
-        <div id="ai-photo-empty" style="width:90px;height:110px;border-radius:8px;border:2px dashed var(--border);display:flex;align-items:center;justify-content:center;font-size:0.7rem;color:var(--muted);text-align:center;padding:4px">Not attached yet</div>
+    <!-- Gender (read-only) -->
+    <div class="form-group">
+      <label class="form-label">Gender</label>
+      <div class="gender-toggle-field">
+        <div class="gender-opt-readonly" id="ro-opt-Girls">👗 Girls</div>
+        <div class="gender-opt-readonly" id="ro-opt-Boys">👕 Boys</div>
       </div>
     </div>
 
-    <div class="form-group" style="margin-top:14px">
-      <label class="form-label">Attach / Replace AI-Generated Image *</label>
-      <input class="form-control" type="file" id="ai-image-input" accept="image/jpeg,image/png,image/webp">
-      <div style="font-size:0.78rem;color:var(--muted);margin-top:4px">This becomes the single stored product image. The shopkeeper's original photo is permanently deleted once accepted.</div>
-    </div>
-
-    <div style="display:flex;gap:12px">
-      <div class="form-group" style="flex:1">
-        <label class="form-label">Margin (₹) *</label>
-        <input class="form-control" type="number" step="0.01" id="margin-input" placeholder="Added on top of shopkeeper price">
+    <!-- Name + Category (read-only) -->
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Product Name</label>
+        <input class="form-control readonly-field" id="ro-name" readonly>
       </div>
-      <div class="form-group" style="flex:1">
-        <label class="form-label">MRP (₹)</label>
-        <input class="form-control" type="number" step="0.01" id="mrp-input" placeholder="Optional — for showing a discount">
+      <div class="form-group">
+        <label class="form-label">Category</label>
+        <input class="form-control readonly-field" id="ro-category" readonly>
       </div>
     </div>
 
-    <div id="req-summary" class="req-detail-col" style="background:#FAFAFA;border-radius:10px;padding:12px;margin-top:6px"></div>
+    <!-- Description (read-only) -->
+    <div class="form-group">
+      <label class="form-label">Description</label>
+      <textarea class="form-control readonly-field" id="ro-description" rows="2" readonly></textarea>
+    </div>
 
-    <div style="display:flex;gap:12px;margin-top:16px">
-      <button class="btn btn-outline" style="flex:1" id="save-btn" onclick="saveReview()">Save (Margin / MRP / Image)</button>
+    <!-- Fabric (read-only) -->
+    <div class="form-group">
+      <label class="form-label">Fabric</label>
+      <input class="form-control readonly-field" id="ro-fabric" readonly>
+    </div>
+
+    <!-- Their Price (read-only reference) -->
+    <div class="form-group">
+      <label class="form-label">Shopkeeper's Price (₹) <span class="locked-note">— what they'll be paid per unit</span></label>
+      <input class="form-control readonly-field" id="ro-shopkeeper-price" readonly>
+    </div>
+
+    <!-- Our Price / MRP — the fields the admin actually fills in -->
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Our Price (₹) *</label>
+        <input class="form-control" type="number" min="1" step="0.01" id="our-price-input" placeholder="e.g. 1299">
+      </div>
+      <div class="form-group">
+        <label class="form-label">MRP / Original Price (₹) <span class="locked-note">— optional, shows strikethrough discount</span></label>
+        <input class="form-control" type="number" min="1" step="0.01" id="mrp-input" placeholder="e.g. 1999">
+      </div>
+    </div>
+    <div id="discount-preview" style="margin-top:-8px;margin-bottom:10px;font-size:0.82rem;color:#2E7D4F;display:none"></div>
+
+    <!-- Sizes (read-only) -->
+    <div class="form-group">
+      <label class="form-label">Sizes <span class="locked-note">— as submitted by the shopkeeper</span></label>
+      <div class="size-grid" id="ro-size-chips"></div>
+      <div style="margin-top:12px">
+        <label class="form-label" style="font-size:0.8rem">Stock per size</label>
+        <div id="ro-size-stock-rows" class="variant-stock-rows"></div>
+      </div>
+    </div>
+
+    <!-- Colors (read-only) -->
+    <div class="form-group">
+      <label class="form-label">Colors <span class="locked-note">— as submitted by the shopkeeper</span></label>
+      <div class="size-grid" id="ro-color-chips"></div>
+      <div style="margin-top:12px">
+        <label class="form-label" style="font-size:0.8rem">Stock per colour</label>
+        <div id="ro-color-stock-rows" class="variant-stock-rows"></div>
+      </div>
+    </div>
+
+    <!-- Size Chart (read-only) -->
+    <div class="form-group">
+      <label class="form-label">Size Chart</label>
+      <div id="ro-size-chart-wrap" class="size-chart-table-wrap" style="display:none">
+        <table id="size-chart-table-ro"><thead id="ro-sc-thead"></thead><tbody id="ro-sc-tbody"></tbody></table>
+      </div>
+      <div id="ro-size-chart-empty" style="font-size:0.82rem;color:var(--muted)">No size chart submitted.</div>
+    </div>
+
+    <!-- Overall stock (read-only) -->
+    <div class="form-group">
+      <label class="form-label">Overall Stock <span class="locked-note">— as submitted by the shopkeeper</span></label>
+      <input class="form-control readonly-field" id="ro-stock" readonly>
+    </div>
+
+    <!-- Shopkeeper's original photos (reference only, never edited here) -->
+    <div class="form-group">
+      <label class="form-label">Shopkeeper's Submitted Photos <span class="locked-note">— reference only, deleted automatically once accepted</span></label>
+      <div style="display:flex;gap:14px">
+        <div>
+          <div class="locked-note" style="margin-bottom:4px">Front</div>
+          <img id="sk-photo-front" class="img-slot" style="width:90px;height:110px;cursor:default" src="">
+        </div>
+        <div>
+          <div class="locked-note" style="margin-bottom:4px">Back</div>
+          <img id="sk-photo-back" class="img-slot" style="width:90px;height:110px;cursor:default" src="">
+        </div>
+      </div>
+    </div>
+
+    <!-- Listing Image(s) — editable, identical uploader to the admin
+         add-product modal. This becomes the product's stored image set. -->
+    <div class="form-group">
+      <label class="form-label">Listing Image(s) (1–6 photos) *</label>
+      <div class="multi-img-uploader" id="img-uploader"></div>
+      <div class="img-count-label" id="img-count">0/6 images · First image = main product photo</div>
+      <div style="font-size:0.75rem;color:var(--muted);margin-top:4px">Drag to reorder · Accepts JPG, PNG, WEBP</div>
+      <input type="file" id="img-file-picker" accept="image/jpeg,image/png,image/webp" multiple style="display:none" onchange="onImageFilePicked(this)">
+    </div>
+
+    <div style="display:flex;gap:12px;margin-top:8px">
+      <button class="btn btn-outline" style="flex:1" id="save-btn" onclick="saveReview()">Save (Price / MRP / Images)</button>
       <button class="btn btn-primary" style="flex:1" id="accept-btn" onclick="acceptRequest()">Accept → Make Live</button>
     </div>
     <button class="btn btn-danger btn-block" style="margin-top:10px" onclick="rejectRequest()">Reject & Delete Request</button>
@@ -112,6 +267,7 @@
 let requests = [];
 let activeRequest = null;
 
+// ─── LIST ────────────────────────────────────────────────────────────────
 async function loadRequests() {
   const status = document.getElementById('filter-status').value;
   try {
@@ -121,53 +277,92 @@ async function loadRequests() {
       body.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:32px;color:var(--muted)">No requests here.</td></tr>';
       return;
     }
-    body.innerHTML = requests.map(r => `
+    body.innerHTML = requests.map(r => {
+      const thumb = r.shopkeeper_image_front_thumb || r.shopkeeper_image_front || (r.admin_images && r.admin_images[0]);
+      return `
       <tr>
-        <td>${r.shopkeeper_image_thumb ? `<img class="req-thumb" src="${r.shopkeeper_image_thumb}">` : (r.admin_image ? `<img class="req-thumb" src="${r.admin_image}">` : '<div class="req-thumb-placeholder">—</div>')}</td>
+        <td>${thumb ? `<img class="req-thumb" src="${thumb}">` : '<div class="req-thumb-placeholder">—</div>'}</td>
         <td><strong>${r.name}</strong><br><span style="font-size:0.78rem;color:var(--muted)">${r.category || '—'} · ${r.gender || '—'}</span></td>
         <td>#${String(r.shopkeeper_id).padStart(3,'0')}</td>
         <td>₹${Number(r.shopkeeper_price).toLocaleString('en-IN')}</td>
-        <td>${r.margin != null ? '₹' + Number(r.margin).toLocaleString('en-IN') : '<span style="color:var(--muted)">Not set</span>'}</td>
+        <td>${r.our_price != null ? '₹' + Number(r.our_price).toLocaleString('en-IN') : '<span style="color:var(--muted)">Not set</span>'}</td>
         <td>${r.mrp != null ? '₹' + Number(r.mrp).toLocaleString('en-IN') : '—'}</td>
-        <td>${r.admin_image ? '<span class="badge badge-success">Attached</span>' : '<span class="badge badge-muted">Pending</span>'}</td>
+        <td>${(r.admin_images && r.admin_images.length) ? `<span class="badge badge-success">${r.admin_images.length} attached</span>` : '<span class="badge badge-muted">Pending</span>'}</td>
         <td><span class="badge badge-${r.status === 'accepted' ? 'success' : r.status === 'rejected' ? 'danger' : 'gold'}">${r.status}</span></td>
         <td>${r.status === 'pending' ? `<button class="btn btn-outline btn-sm" onclick='openReview(${JSON.stringify(r)})'>Review</button>` : '—'}</td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
   } catch(e) {
     showToast(e.message || 'Failed to load requests', 'error');
   }
 }
 
+// ─── OPEN REVIEW (prefill everything, same widgets as add-product modal) ──
 function openReview(r) {
   activeRequest = r;
   document.getElementById('modal-alert').innerHTML = '';
-  document.getElementById('ai-image-input').value = '';
-  document.getElementById('margin-input').value = r.margin != null ? r.margin : '';
+
+  // Gender
+  document.getElementById('ro-opt-Girls').className = 'gender-opt-readonly' + (r.gender === 'Girls' ? ' active-girls' : '');
+  document.getElementById('ro-opt-Boys').className = 'gender-opt-readonly' + (r.gender === 'Boys' ? ' active-boys' : '');
+
+  document.getElementById('ro-name').value = r.name || '';
+  document.getElementById('ro-category').value = r.category || '';
+  document.getElementById('ro-description').value = r.description || '';
+  document.getElementById('ro-fabric').value = r.fabric || '';
+  document.getElementById('ro-shopkeeper-price').value = `₹${Number(r.shopkeeper_price).toLocaleString('en-IN')}`;
+  document.getElementById('ro-stock').value = r.stock;
+
+  document.getElementById('our-price-input').value = r.our_price != null ? r.our_price : '';
   document.getElementById('mrp-input').value = r.mrp != null ? r.mrp : '';
+  updateDiscountPreview();
 
-  document.getElementById('sk-photo').src = r.shopkeeper_image || '';
+  // Sizes (read-only chips)
+  const sizes = Array.isArray(r.sizes) ? r.sizes : (r.sizes ? JSON.parse(r.sizes) : []);
+  document.getElementById('ro-size-chips').innerHTML = sizes.length
+    ? sizes.map(s => `<div class="size-chip selected">${s}</div>`).join('')
+    : '<span style="color:var(--muted);font-size:0.85rem">None</span>';
+  const sizeStock = r.size_stock || {};
+  document.getElementById('ro-size-stock-rows').innerHTML = sizes.filter(s => sizeStock[s] !== undefined).map(s => `
+    <div class="variant-stock-row"><span class="variant-stock-label">${s}</span><span class="variant-stock-val">${sizeStock[s]}</span></div>
+  `).join('') || '<span class="locked-note">No per-size stock set</span>';
 
-  const aiImg = document.getElementById('ai-photo');
-  const aiEmpty = document.getElementById('ai-photo-empty');
-  if (r.admin_image) {
-    aiImg.src = r.admin_image; aiImg.style.display = 'block'; aiEmpty.style.display = 'none';
+  // Colors (read-only chips)
+  const colors = Array.isArray(r.colors) ? r.colors : (r.colors ? JSON.parse(r.colors) : []);
+  document.getElementById('ro-color-chips').innerHTML = colors.length
+    ? colors.map(c => `<div class="size-chip selected">${c}</div>`).join('')
+    : '<span style="color:var(--muted);font-size:0.85rem">None</span>';
+  const colorStock = r.color_stock || {};
+  document.getElementById('ro-color-stock-rows').innerHTML = colors.filter(c => colorStock[c] !== undefined).map(c => `
+    <div class="variant-stock-row"><span class="variant-stock-label">${c}</span><span class="variant-stock-val">${colorStock[c]}</span></div>
+  `).join('') || '<span class="locked-note">No per-colour stock set</span>';
+
+  // Size chart (read-only render)
+  let sc = r.size_chart;
+  if (typeof sc === 'string' && sc) { try { sc = JSON.parse(sc); } catch(e) { sc = null; } }
+  const scWrap = document.getElementById('ro-size-chart-wrap');
+  const scEmpty = document.getElementById('ro-size-chart-empty');
+  if (sc && sc.columns && sc.columns.length && sc.rows && sc.rows.length) {
+    document.getElementById('ro-sc-thead').innerHTML = '<tr>' + sc.columns.map(c => `<th>${escapeHtml(c)}</th>`).join('') + '</tr>';
+    document.getElementById('ro-sc-tbody').innerHTML = sc.rows.map(row => '<tr>' + row.map(cell => `<td>${escapeHtml(cell)}</td>`).join('') + '</tr>').join('');
+    scWrap.style.display = 'block'; scEmpty.style.display = 'none';
   } else {
-    aiImg.style.display = 'none'; aiEmpty.style.display = 'flex';
+    scWrap.style.display = 'none'; scEmpty.style.display = 'block';
   }
 
-  renderSummary(r);
+  // Shopkeeper's original photos (reference only)
+  document.getElementById('sk-photo-front').src = r.shopkeeper_image_front || '';
+  document.getElementById('sk-photo-back').src = r.shopkeeper_image_back || '';
+
+  // Listing image uploader — prefill with any images the admin already attached
+  loadExistingImages(r.admin_images || []);
+
   document.getElementById('review-modal').classList.add('open');
 }
 
-function renderSummary(r) {
-  const sizes = (r.sizes || []).join(', ') || '—';
-  const colors = (r.colors || []).join(', ') || '—';
-  document.getElementById('req-summary').innerHTML = `
-    <div><span class="label">Description:</span> ${r.description || '—'}</div>
-    <div><span class="label">Sizes:</span> ${sizes} &nbsp; <span class="label">Colors:</span> ${colors}</div>
-    <div><span class="label">Stock:</span> ${r.stock}</div>
-  `;
+function escapeHtml(str) {
+  return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function closeModal() {
@@ -175,14 +370,127 @@ function closeModal() {
   activeRequest = null;
 }
 
+function updateDiscountPreview() {
+  const ourPrice = parseFloat(document.getElementById('our-price-input').value) || 0;
+  const mrp = parseFloat(document.getElementById('mrp-input').value) || 0;
+  const preview = document.getElementById('discount-preview');
+  if (mrp > ourPrice && ourPrice > 0) {
+    const pct = Math.round((1 - ourPrice / mrp) * 100);
+    preview.style.display = 'block'; preview.style.color = '#2E7D4F';
+    preview.textContent = `✅ ${pct}% discount — customer sees ₹${mrp.toFixed(0)} scratched, ₹${ourPrice.toFixed(0)} highlighted`;
+  } else if (mrp > 0 && mrp <= ourPrice) {
+    preview.style.display = 'block'; preview.style.color = '#C0392B';
+    preview.textContent = '⚠️ MRP must be higher than Our Price for discount to show';
+  } else {
+    preview.style.display = 'none';
+  }
+}
+document.getElementById('our-price-input').addEventListener('input', updateDiscountPreview);
+document.getElementById('mrp-input').addEventListener('input', updateDiscountPreview);
+
+// ─── MULTI-IMAGE UPLOADER (identical behaviour to admin add-product modal) ─
+let imageSlots = [];
+const MAX_IMAGES = 6;
+
+function renderImageUploader() {
+  const container = document.getElementById('img-uploader');
+  const countEl = document.getElementById('img-count');
+  container.innerHTML = '';
+
+  imageSlots.forEach((slot, idx) => {
+    const div = document.createElement('div');
+    div.className = 'img-slot' + (idx === 0 ? ' is-main' : '');
+    div.draggable = true;
+    div.dataset.idx = idx;
+
+    const img = document.createElement('img');
+    img.src = slot.url;
+    img.alt = `Image ${idx + 1}`;
+    div.appendChild(img);
+
+    const rmBtn = document.createElement('button');
+    rmBtn.type = 'button';
+    rmBtn.className = 'img-slot-remove';
+    rmBtn.title = 'Remove image';
+    rmBtn.textContent = '×';
+    rmBtn.onclick = (e) => { e.stopPropagation(); removeImageSlot(idx); };
+    div.appendChild(rmBtn);
+
+    if (idx === 0) {
+      const star = document.createElement('span');
+      star.className = 'img-slot-star';
+      star.textContent = '☆ Main';
+      div.appendChild(star);
+    }
+
+    div.addEventListener('dragstart', e => {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', idx);
+      div.style.opacity = '0.5';
+    });
+    div.addEventListener('dragend', () => div.style.opacity = '1');
+    div.addEventListener('dragover', e => { e.preventDefault(); div.classList.add('drag-over'); });
+    div.addEventListener('dragleave', () => div.classList.remove('drag-over'));
+    div.addEventListener('drop', e => {
+      e.preventDefault();
+      div.classList.remove('drag-over');
+      const fromIdx = parseInt(e.dataTransfer.getData('text/plain'), 10);
+      const toIdx = parseInt(div.dataset.idx, 10);
+      if (fromIdx !== toIdx) {
+        const [moved] = imageSlots.splice(fromIdx, 1);
+        imageSlots.splice(toIdx, 0, moved);
+        renderImageUploader();
+      }
+    });
+
+    container.appendChild(div);
+  });
+
+  if (imageSlots.length < MAX_IMAGES) {
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'img-add-slot';
+    addBtn.innerHTML = '<span class="plus">+</span><span>Add</span>';
+    addBtn.onclick = () => document.getElementById('img-file-picker').click();
+    container.appendChild(addBtn);
+  }
+
+  countEl.textContent = `${imageSlots.length}/${MAX_IMAGES} images · First image = main product photo`;
+}
+
+function removeImageSlot(idx) {
+  imageSlots.splice(idx, 1);
+  renderImageUploader();
+}
+
+function onImageFilePicked(input) {
+  const files = Array.from(input.files || []);
+  input.value = '';
+  const remaining = MAX_IMAGES - imageSlots.length;
+  files.slice(0, remaining).forEach(file => {
+    const url = URL.createObjectURL(file);
+    imageSlots.push({ type: 'new', file, url });
+  });
+  renderImageUploader();
+}
+
+function loadExistingImages(images) {
+  imageSlots = (images || []).map(url => ({ type: 'existing', url }));
+  renderImageUploader();
+}
+
+// ─── SAVE / ACCEPT / REJECT ─────────────────────────────────────────────
 function buildFormData() {
   const fd = new FormData();
-  const margin = document.getElementById('margin-input').value;
+  const ourPrice = document.getElementById('our-price-input').value;
   const mrp = document.getElementById('mrp-input').value;
-  if (margin !== '') fd.append('margin', margin);
+  if (ourPrice !== '') fd.append('our_price', ourPrice);
   if (mrp !== '') fd.append('mrp', mrp);
-  const fileInput = document.getElementById('ai-image-input');
-  if (fileInput.files[0]) fd.append('admin_image', fileInput.files[0]);
+
+  const keepUrls = imageSlots.filter(s => s.type === 'existing').map(s => s.url);
+  const newFiles = imageSlots.filter(s => s.type === 'new').map(s => s.file);
+  fd.append('keep_images', JSON.stringify(keepUrls));
+  newFiles.forEach(f => fd.append('new_images', f));
   return fd;
 }
 
@@ -202,21 +510,26 @@ async function saveReview() {
   } catch(e) {
     document.getElementById('modal-alert').innerHTML = `<div class="alert alert-danger">⚠️ ${e.message}</div>`;
   }
-  btn.disabled = false; btn.textContent = 'Save (Margin / MRP / Image)';
+  btn.disabled = false; btn.textContent = 'Save (Price / MRP / Images)';
 }
 
 async function acceptRequest() {
   if (!activeRequest) return;
+  if (!document.getElementById('our-price-input').value) {
+    document.getElementById('modal-alert').innerHTML = '<div class="alert alert-danger">Set Our Price before accepting</div>';
+    return;
+  }
+  if (!imageSlots.length) {
+    document.getElementById('modal-alert').innerHTML = '<div class="alert alert-danger">Attach at least one product image before accepting</div>';
+    return;
+  }
   const btn = document.getElementById('accept-btn');
   btn.disabled = true; btn.textContent = 'Processing...';
   try {
-    // Save any unsaved margin/MRP/image edits first
+    // Save any unsaved price/MRP/image edits first
     const fd = buildFormData();
-    const hasEdits = [...fd.keys()].length > 0;
-    if (hasEdits) {
-      const upd = await fetch(`/api/requests/admin/${activeRequest.id}`, { method: 'PUT', body: fd });
-      if (!upd.ok) { const err = await upd.json(); throw new Error(err.detail || 'Failed to save changes'); }
-    }
+    const upd = await fetch(`/api/requests/admin/${activeRequest.id}`, { method: 'PUT', body: fd });
+    if (!upd.ok) { const err = await upd.json(); throw new Error(err.detail || 'Failed to save changes'); }
     await apiFetch(`/api/requests/admin/${activeRequest.id}/accept`, { method: 'POST' });
     showToast('Accepted — now live! ✅');
     closeModal();

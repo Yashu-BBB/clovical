@@ -4,26 +4,98 @@
   <meta charset="UTF-8">
   <link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>My Products — Shopkeeper Panel</title>
+  <title>My Requests — Shopkeeper Panel</title>
   <link rel="stylesheet" href="/static/css/shared.css">
   <link rel="stylesheet" href="/static/css/admin.css">
   <style>
-    .tab-bar { display:flex; gap:8px; margin-bottom:20px; border-bottom:2px solid var(--border); }
-    .tab-btn { padding:10px 18px; border:none; background:none; font-family:var(--font-body); font-size:0.92rem; font-weight:600; color:var(--muted); cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px; }
-    .tab-btn.active { color:#0A0A0A; border-bottom-color:#0A0A0A; }
-    .tab-panel { display:none; }
-    .tab-panel.active { display:block; }
-    .req-thumb, .prod-thumb { width:46px; height:58px; object-fit:cover; border-radius:6px; border:1px solid var(--border); }
+    .req-thumb { width:46px; height:58px; object-fit:cover; border-radius:6px; border:1px solid var(--border); }
     .thumb-placeholder { width:46px; height:58px; border-radius:6px; border:1px dashed var(--border); display:flex; align-items:center; justify-content:center; font-size:0.7rem; color:var(--muted); background:#FAFAFA; }
     .upload-warning { background:#FFF8E1; border:1px solid #F0D98C; border-radius:8px; padding:10px 14px; font-size:0.82rem; color:#6B5C0E; margin-bottom:10px; }
-    .img-preview { width:140px; height:170px; object-fit:cover; border-radius:10px; margin-top:8px; display:none; border:1px solid var(--border); }
-    .variant-stock-rows { display:flex; flex-direction:column; gap:6px; margin-top:8px; }
-    .variant-stock-row { display:flex; align-items:center; gap:10px; }
-    .variant-stock-row .vs-label { min-width:60px; font-weight:600; font-size:0.85rem; }
-    .variant-stock-row input { width:80px; padding:5px 8px; border:2px solid var(--border); border-radius:6px; }
-    .gender-toggle { display:flex; gap:10px; margin-top:6px; }
-    .gender-opt { flex:1; padding:10px; text-align:center; border:2px solid var(--border); border-radius:10px; cursor:pointer; font-weight:600; }
-    .gender-opt.selected { border-color:#0A0A0A; background:#F3F0FF; }
+
+    /* ─── Two-photo (front/back) uploader ───────────────────────────── */
+    .two-photo-uploader { display:flex; gap:14px; flex-wrap:wrap; margin-top:8px; }
+    .photo-slot { flex:1; min-width:140px; max-width:200px; }
+    .photo-slot-label { font-size:0.8rem; font-weight:700; margin-bottom:6px; }
+    .photo-drop {
+      position:relative; width:100%; aspect-ratio:4/5; border-radius:12px;
+      border:2px dashed var(--border); background:#FAFAFA; cursor:pointer;
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      gap:6px; overflow:hidden; text-align:center; padding:10px;
+    }
+    .photo-drop:hover { border-color:#0A0A0A; }
+    .photo-drop.has-image { border-style:solid; padding:0; }
+    .photo-drop img { width:100%; height:100%; object-fit:cover; display:block; }
+    .photo-drop .plus { font-size:1.6rem; color:#B0B0B0; }
+    .photo-drop .hint { font-size:0.72rem; color:var(--muted); }
+    .photo-remove {
+      position:absolute; top:6px; right:6px; width:24px; height:24px;
+      background:rgba(0,0,0,0.65); color:#fff; border:none; border-radius:50%;
+      font-size:0.9rem; cursor:pointer; display:none; align-items:center; justify-content:center; z-index:2;
+    }
+    .photo-drop.has-image .photo-remove { display:flex; }
+
+    /* ─── Size Selector (mirrors admin add-product modal) ─────────────── */
+    .size-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+    .size-chip {
+      padding: 6px 14px; border-radius: 8px; border: 2px solid var(--border);
+      cursor: pointer; font-weight: 600; font-size: 0.85rem;
+      background: #fff; transition: all .15s; user-select: none;
+    }
+    .size-chip.selected { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .size-chip:hover:not(.selected) { border-color: var(--primary); color: var(--primary); }
+    .size-type-tabs { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+    .size-type-tab {
+      padding: 5px 14px; border-radius: 999px; border: 1.5px solid var(--border);
+      font-size: 0.8rem; font-weight: 600; cursor: pointer; background: #fff;
+      transition: all .15s;
+    }
+    .size-type-tab.active { background: var(--primary-light); color: #fff; border-color: var(--primary-light); }
+
+    /* ─── Gender Toggle ─────────────────────────────────── */
+    .gender-toggle-field { display: flex; gap: 12px; margin-top: 6px; }
+    .gender-opt {
+      flex: 1; padding: 12px; border-radius: 10px; border: 2px solid var(--border);
+      cursor: pointer; text-align: center; font-weight: 700; transition: all .2s;
+      background: #fff;
+    }
+    .gender-opt.selected-girls { border-color: #EC4899; background: #FDF2F8; color: #BE185D; }
+    .gender-opt.selected-boys { border-color: #3B82F6; background: #EFF6FF; color: #1D4ED8; }
+    .gender-opt:hover { border-color: var(--primary); }
+
+    /* ─── Size Chart (mirrors admin add-product modal) ─────────────────── */
+    .size-chart-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; margin-top: 10px; }
+    #size-chart-table { width: 100%; border-collapse: collapse; }
+    #size-chart-table th, #size-chart-table td { border-bottom: 1px solid var(--border); padding: 0; }
+    #size-chart-table th {
+      background: #FAFAFA; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em;
+      color: var(--muted); text-align: left; padding: 8px 10px; white-space: nowrap;
+    }
+    #size-chart-table td { vertical-align: middle; }
+    #size-chart-table tr:last-child td { border-bottom: none; }
+    #size-chart-table input {
+      width: 100%; border: none; padding: 8px 10px; font-size: 0.85rem; font-family: inherit;
+      background: transparent; color: var(--black);
+    }
+    #size-chart-table input:focus { outline: 2px solid var(--primary-light); outline-offset: -2px; background: #fff; }
+    #size-chart-table .col-remove { width: 36px; text-align: center; }
+    #size-chart-table .row-remove-btn { border: none; background: none; color: var(--danger); cursor: pointer; font-size: 1rem; line-height: 1; padding: 4px 8px; }
+    #size-chart-table .col-remove-btn { border: none; background: none; color: var(--danger); cursor: pointer; font-size: 0.9rem; line-height: 1; }
+    .size-chart-actions { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+    .size-chart-empty { font-size: 0.82rem; color: var(--muted); padding: 14px; text-align: center; }
+
+    /* ─── Per-Variant Stock ─────────────────────────────── */
+    .variant-stock-rows { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+    .variant-stock-row {
+      display: flex; align-items: center; gap: 6px;
+      border: 1.5px solid var(--border); border-radius: 8px; padding: 6px 10px;
+      background: #fff;
+    }
+    .variant-stock-row .variant-stock-label { font-weight: 600; font-size: 0.82rem; min-width: 20px; }
+    .variant-stock-row input[type="number"] {
+      width: 60px; border: 1px solid var(--border); border-radius: 6px;
+      padding: 4px 6px; font-size: 0.82rem; font-family: inherit;
+    }
+    .variant-stock-empty { font-size: 0.8rem; color: var(--muted); }
   </style>
 </head>
 <body>
@@ -35,41 +107,27 @@
     <div class="admin-topbar">
       <div style="display:flex;align-items:center;gap:12px">
         <button class="sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
-        <span class="admin-topbar-title">My Products</span>
+        <span class="admin-topbar-title">My Requests</span>
       </div>
       <button class="btn btn-primary btn-sm" onclick="openAddModal()">+ Add Product</button>
     </div>
 
     <div class="admin-content">
-      <div class="tab-bar">
-        <button class="tab-btn active" data-tab="requests" onclick="switchTab('requests')">My Requests</button>
-        <button class="tab-btn" data-tab="live" onclick="switchTab('live')">Live Products</button>
-      </div>
-
-      <div class="tab-panel active" id="tab-requests">
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Photo</th><th>Product</th><th>Category</th><th>Your Price</th><th>Stock</th><th>Status</th><th>Submitted</th></tr></thead>
-            <tbody id="requests-body"><tr><td colspan="7" style="text-align:center;padding:32px;color:var(--muted)">Loading...</td></tr></tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="tab-panel" id="tab-live">
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Photo</th><th>Product</th><th>Category</th><th>Your Price</th><th>Stock</th></tr></thead>
-            <tbody id="live-body"><tr><td colspan="5" style="text-align:center;padding:32px;color:var(--muted)">Loading...</td></tr></tbody>
-          </table>
-        </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Photo</th><th>Product</th><th>Category</th><th>Your Price</th><th>Stock</th><th>Status</th><th>Submitted</th></tr></thead>
+          <tbody id="requests-body"><tr><td colspan="7" style="text-align:center;padding:32px;color:var(--muted)">Loading...</td></tr></tbody>
+        </table>
       </div>
     </div>
   </div>
 </div>
 
-<!-- Add Product Request Modal -->
+<!-- Add Product Request Modal — same fields/format as the admin add-product
+     modal, minus Our Price/MRP/shopkeeper picker (auto-filled from login),
+     plus Fabric and exactly two photos (front/back). -->
 <div class="modal-overlay" id="add-modal">
-  <div class="modal" style="max-width:600px;max-height:90vh;overflow-y:auto">
+  <div class="modal" style="max-width:660px">
     <div class="modal-header">
       <h3 class="modal-title">Add Product</h3>
       <button class="modal-close" onclick="closeAddModal()">×</button>
@@ -77,59 +135,141 @@
     <div id="modal-alert"></div>
 
     <form id="request-form">
+      <!-- Gender -->
       <div class="form-group">
         <label class="form-label">Gender *</label>
-        <div class="gender-toggle">
-          <div class="gender-opt selected" id="opt-Girls" onclick="selectGender('Girls')">Girls</div>
-          <div class="gender-opt" id="opt-Boys" onclick="selectGender('Boys')">Boys</div>
+        <div class="gender-toggle-field">
+          <div class="gender-opt" id="opt-Girls" onclick="selectGender('Girls')">👗 Girls</div>
+          <div class="gender-opt" id="opt-Boys" onclick="selectGender('Boys')">👕 Boys</div>
         </div>
       </div>
 
-      <div class="form-group">
-        <label class="form-label">Category *</label>
-        <select class="form-control" id="category-select" required></select>
+      <!-- Name + Category -->
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Product Name *</label>
+          <input class="form-control" id="name-input" maxlength="200" required placeholder="e.g. Floral Summer Kurti">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Category *</label>
+          <select class="form-control" id="category-select" required><option value="">Select gender first...</option></select>
+        </div>
       </div>
 
-      <div class="form-group">
-        <label class="form-label">Product Name *</label>
-        <input class="form-control" id="name-input" maxlength="200" required>
-      </div>
-
+      <!-- Description -->
       <div class="form-group">
         <label class="form-label">Description</label>
-        <textarea class="form-control" id="description-input" rows="3" maxlength="2000"></textarea>
+        <textarea class="form-control" id="description-input" rows="2" maxlength="2000" placeholder="Describe the product..."></textarea>
       </div>
 
+      <!-- Fabric -->
+      <div class="form-group">
+        <label class="form-label">Fabric</label>
+        <input class="form-control" id="fabric-input" maxlength="100" placeholder="e.g. Cotton, Rayon, Georgette">
+      </div>
+
+      <!-- Your Price -->
       <div class="form-group">
         <label class="form-label">Your Price (₹) *</label>
         <input class="form-control" type="number" min="1" step="0.01" id="price-input" placeholder="What you'll be paid per unit" required>
       </div>
 
+      <!-- Sizes -->
+      <div class="form-group">
+        <label class="form-label">Sizes *</label>
+        <div class="size-type-tabs">
+          <div class="size-type-tab active" onclick="loadSizePreset('standard', this)">Standard (S-XXL)</div>
+          <div class="size-type-tab" onclick="loadSizePreset('bottom', this)">Bottom Wear (28-42)</div>
+          <div class="size-type-tab" onclick="loadSizePreset('footwear', this)">Footwear (6-11)</div>
+          <div class="size-type-tab" onclick="loadSizePreset('freesize', this)">Free Size</div>
+          <div class="size-type-tab" onclick="loadSizePreset('custom', this)">Custom</div>
+        </div>
+        <div class="size-grid" id="size-chips"></div>
+        <div id="custom-size-wrap" style="display:none;margin-top:10px">
+          <input class="form-control" id="custom-size-input" placeholder="Type size and press Enter (e.g. 36, 38, 40)">
+        </div>
+        <div style="margin-top:8px;font-size:0.82rem;color:var(--muted)">
+          Selected: <span id="selected-sizes-display" style="color:var(--primary);font-weight:600">None</span>
+        </div>
+        <div style="margin-top:12px">
+          <label class="form-label" style="font-size:0.8rem">Stock per size <span style="color:var(--muted);font-weight:400">— leave blank to not track that size separately</span></label>
+          <div id="size-stock-rows" class="variant-stock-rows"></div>
+        </div>
+      </div>
+
+      <!-- Colors -->
+      <div class="form-group">
+        <label class="form-label">Colors (comma separated)</label>
+        <input class="form-control" id="colors-input" placeholder="e.g. Red, Black, White, Navy Blue" oninput="renderColorStockRows()">
+        <div style="margin-top:12px">
+          <label class="form-label" style="font-size:0.8rem">Stock per colour <span style="color:var(--muted);font-weight:400">— leave blank to not track that colour separately</span></label>
+          <div id="color-stock-rows" class="variant-stock-rows"></div>
+        </div>
+      </div>
+
+      <!-- Size Chart (optional) -->
+      <div class="form-group">
+        <label class="form-label">Size Chart <span style="color:var(--muted);font-weight:400;font-size:0.82rem">— optional, shows a "Size Guide" popup to customers</span></label>
+        <div class="form-row" style="margin-bottom:10px">
+          <div class="form-group" style="margin-bottom:0">
+            <select class="form-control" id="size-chart-type-select" onchange="loadSizeChartPreset(this.value)">
+              <option value="">Select chart type to auto-fill...</option>
+              <option value="tshirt">T-Shirt / Top</option>
+              <option value="shirt">Shirt</option>
+              <option value="pants">Pants / Jeans</option>
+              <option value="kurti">Kurti / Dress</option>
+              <option value="saree">Saree</option>
+              <option value="custom">Custom (blank)</option>
+            </select>
+          </div>
+        </div>
+        <div id="size-chart-editor" style="display:none">
+          <div class="size-chart-table-wrap">
+            <table id="size-chart-table"><thead id="size-chart-thead"></thead><tbody id="size-chart-tbody"></tbody></table>
+          </div>
+          <div class="size-chart-actions">
+            <button type="button" class="btn btn-outline btn-sm" onclick="addSizeChartRow()">+ Add Row</button>
+            <button type="button" class="btn btn-outline btn-sm" onclick="addSizeChartColumn()">+ Add Column</button>
+            <button type="button" class="btn btn-danger btn-sm" onclick="clearSizeChart()">Clear Size Chart</button>
+          </div>
+        </div>
+        <div id="size-chart-empty-msg" class="size-chart-empty">No size chart added. Select a chart type above to get started.</div>
+      </div>
+
+      <!-- Stock -->
       <div class="form-group">
         <label class="form-label">Overall Stock *</label>
         <input class="form-control" type="number" min="1" id="stock-input" value="1" required>
       </div>
 
+      <!-- Photos: exactly front + back -->
       <div class="form-group">
-        <label class="form-label">Sizes (comma separated) *</label>
-        <input class="form-control" id="sizes-input" placeholder="e.g. S, M, L, XL" oninput="renderSizeStockRows()">
-        <div id="size-stock-rows" class="variant-stock-rows"></div>
+        <label class="form-label">Product Photos — Front &amp; Back *</label>
+        <div class="upload-warning">⚠️ Max file size: <strong>10MB per photo</strong>. Please compress large photos before uploading — files above this limit will be rejected.</div>
+        <div class="two-photo-uploader">
+          <div class="photo-slot">
+            <div class="photo-slot-label">Front side of the dress *</div>
+            <div class="photo-drop" id="drop-front" onclick="triggerPhotoPick('front')">
+              <span class="plus">+</span><span class="hint">Tap to upload front photo</span>
+              <button type="button" class="photo-remove" onclick="event.stopPropagation(); removePhoto('front')">×</button>
+            </div>
+          </div>
+          <div class="photo-slot">
+            <div class="photo-slot-label">Back side of the dress *</div>
+            <div class="photo-drop" id="drop-back" onclick="triggerPhotoPick('back')">
+              <span class="plus">+</span><span class="hint">Tap to upload back photo</span>
+              <button type="button" class="photo-remove" onclick="event.stopPropagation(); removePhoto('back')">×</button>
+            </div>
+          </div>
+        </div>
+        <input type="file" id="front-file-picker" accept="image/jpeg,image/png,image/webp" style="display:none" onchange="onPhotoPicked('front', this)">
+        <input type="file" id="back-file-picker" accept="image/jpeg,image/png,image/webp" style="display:none" onchange="onPhotoPicked('back', this)">
       </div>
 
-      <div class="form-group">
-        <label class="form-label">Colors (comma separated)</label>
-        <input class="form-control" id="colors-input" placeholder="e.g. Red, Black" oninput="renderColorStockRows()">
-        <div id="color-stock-rows" class="variant-stock-rows"></div>
+      <div style="display:flex;gap:12px;margin-top:8px">
+        <button type="submit" class="btn btn-primary btn-lg" style="flex:1" id="submit-btn">Submit for Review</button>
+        <button type="button" class="btn btn-outline" onclick="closeAddModal()">Cancel</button>
       </div>
-
-      <div class="form-group">
-        <label class="form-label">Product Photo *</label>
-        <div class="upload-warning">⚠️ Max file size: <strong>10MB</strong>. Please compress large photos before uploading — files above this limit will be rejected.</div>
-        <input class="form-control" type="file" id="image-input" accept="image/jpeg,image/png,image/webp" required onchange="previewImage(this)">
-        <img id="img-preview" class="img-preview" src="" alt="">
-      </div>
-
-      <button type="submit" class="btn btn-primary btn-lg btn-block" id="submit-btn">Submit for Review</button>
     </form>
   </div>
 </div>
@@ -137,15 +277,13 @@
 <div id="toast-container"></div>
 <script src="/static/js/shared.js"></script>
 <script>
-let selectedGender = 'Girls';
-let sizeStock = {};
-let colorStock = {};
+let selectedSizes = [];
+let variantSizeStock = {};
+let variantColorStock = {};
+const photos = { front: null, back: null };
+const MAX_PHOTO_SIZE = 10 * 1024 * 1024;
 
-function switchTab(tab) {
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === `tab-${tab}`));
-}
-
+// ─── REQUESTS LIST ──────────────────────────────────────────────────────
 async function loadRequests() {
   try {
     const reqs = await apiFetch('/api/requests/mine');
@@ -156,7 +294,7 @@ async function loadRequests() {
     }
     body.innerHTML = reqs.map(r => `
       <tr>
-        <td>${r.shopkeeper_image_thumb ? `<img class="req-thumb" src="${r.shopkeeper_image_thumb}">` : '<div class="thumb-placeholder">—</div>'}</td>
+        <td>${r.shopkeeper_image_front_thumb ? `<img class="req-thumb" src="${r.shopkeeper_image_front_thumb}">` : '<div class="thumb-placeholder">—</div>'}</td>
         <td><strong>${r.name}</strong></td>
         <td>${r.category || '—'}</td>
         <td>₹${Number(r.shopkeeper_price).toLocaleString('en-IN')}</td>
@@ -170,33 +308,13 @@ async function loadRequests() {
   }
 }
 
-async function loadLiveProducts() {
-  try {
-    const prods = await apiFetch('/api/shopkeeper/products');
-    const body = document.getElementById('live-body');
-    if (!prods.length) {
-      body.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--muted)">No live products yet — accepted requests will show up here.</td></tr>';
-      return;
-    }
-    body.innerHTML = prods.map(p => `
-      <tr>
-        <td>${p.image ? `<img class="prod-thumb" src="${p.image}">` : '<div class="thumb-placeholder">—</div>'}</td>
-        <td><strong>${p.name}</strong></td>
-        <td>${p.category || '—'}</td>
-        <td>₹${Number(p.shopkeeper_price).toLocaleString('en-IN')}</td>
-        <td>${p.stock}</td>
-      </tr>
-    `).join('');
-  } catch(e) {
-    showToast(e.message || 'Failed to load your products', 'error');
-  }
-}
-
-function selectGender(g) {
-  selectedGender = g;
-  document.getElementById('opt-Girls').classList.toggle('selected', g === 'Girls');
-  document.getElementById('opt-Boys').classList.toggle('selected', g === 'Boys');
-  loadCategoryDropdown(g);
+// ─── GENDER + CATEGORY ──────────────────────────────────────────────────
+function selectGender(gender) {
+  document.getElementById('gender-val') || (window.selectedGender = gender);
+  window.selectedGender = gender;
+  document.getElementById('opt-Girls').className = 'gender-opt' + (gender === 'Girls' ? ' selected-girls' : '');
+  document.getElementById('opt-Boys').className = 'gender-opt' + (gender === 'Boys' ? ' selected-boys' : '');
+  loadCategoryDropdown(gender);
 }
 
 async function loadCategoryDropdown(gender) {
@@ -211,91 +329,243 @@ async function loadCategoryDropdown(gender) {
   }
 }
 
+// ─── SIZES (identical logic to admin add-product modal) ────────────────
+const SIZE_PRESETS = {
+  standard: ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'],
+  bottom: ['26', '28', '30', '32', '34', '36', '38', '40', '42'],
+  footwear: ['6', '7', '8', '9', '10', '11'],
+  freesize: ['Free Size'],
+  custom: []
+};
+
+function loadSizePreset(type, tabEl) {
+  document.querySelectorAll('.size-type-tab').forEach(t => t.classList.remove('active'));
+  tabEl.classList.add('active');
+  document.getElementById('custom-size-wrap').style.display = type === 'custom' ? 'block' : 'none';
+  selectedSizes = [];
+  renderSizeChips(type === 'custom' ? [] : SIZE_PRESETS[type]);
+  if (type === 'freesize') {
+    selectedSizes = ['Free Size'];
+    document.querySelectorAll('.size-chip').forEach(c => c.classList.add('selected'));
+    updateSizesHidden();
+  }
+}
+
+function renderSizeChips(sizes) {
+  const grid = document.getElementById('size-chips');
+  if (!sizes.length) {
+    grid.innerHTML = '<span style="color:var(--muted);font-size:0.85rem">Type custom sizes above and press Enter</span>';
+    updateSizesHidden(); renderSizeStockRows();
+    return;
+  }
+  grid.innerHTML = sizes.map(s => `<div class="size-chip ${selectedSizes.includes(s) ? 'selected' : ''}" onclick="toggleSize('${s}', this)">${s}</div>`).join('');
+  updateSizesHidden(); renderSizeStockRows();
+}
+
+function toggleSize(size, el) {
+  const idx = selectedSizes.indexOf(size);
+  if (idx > -1) { selectedSizes.splice(idx, 1); el.classList.remove('selected'); delete variantSizeStock[size]; }
+  else { selectedSizes.push(size); el.classList.add('selected'); }
+  updateSizesHidden(); renderSizeStockRows();
+}
+
+function updateSizesHidden() {
+  document.getElementById('selected-sizes-display').textContent = selectedSizes.length ? selectedSizes.join(', ') : 'None';
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const customInput = document.getElementById('custom-size-input');
+  customInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const val = customInput.value.trim();
+      if (val && !selectedSizes.includes(val)) {
+        selectedSizes.push(val);
+        const chip = document.createElement('div');
+        chip.className = 'size-chip selected';
+        chip.textContent = val;
+        chip.onclick = () => { toggleSize(val, chip); chip.remove(); };
+        const grid = document.getElementById('size-chips');
+        if (grid.querySelector('span')) grid.innerHTML = '';
+        grid.appendChild(chip);
+        updateSizesHidden(); renderSizeStockRows();
+      }
+      customInput.value = '';
+    }
+  });
+});
+
 function renderSizeStockRows() {
-  const sizes = document.getElementById('sizes-input').value.split(',').map(s => s.trim()).filter(Boolean);
-  document.getElementById('size-stock-rows').innerHTML = sizes.map(s => `
+  const wrap = document.getElementById('size-stock-rows');
+  if (!wrap) return;
+  if (!selectedSizes.length) { wrap.innerHTML = '<span class="variant-stock-empty">Select sizes above first</span>'; return; }
+  wrap.innerHTML = selectedSizes.map(s => `
     <div class="variant-stock-row">
-      <span class="vs-label">${s}</span>
-      <input type="number" min="0" value="${sizeStock[s] ?? 1}" onchange="sizeStock['${s}'] = parseInt(this.value)||0">
-    </div>
-  `).join('');
-  sizes.forEach(s => { if (sizeStock[s] === undefined) sizeStock[s] = 1; });
+      <span class="variant-stock-label">${s}</span>
+      <input type="number" min="0" placeholder="—" value="${variantSizeStock[s] !== undefined ? variantSizeStock[s] : ''}" oninput="setSizeStock('${s}', this.value)">
+    </div>`).join('');
+}
+function setSizeStock(size, val) {
+  if (val === '' || val === null) delete variantSizeStock[size];
+  else variantSizeStock[size] = Math.max(0, parseInt(val, 10) || 0);
 }
 
 function renderColorStockRows() {
-  const colors = document.getElementById('colors-input').value.split(',').map(c => c.trim()).filter(Boolean);
-  document.getElementById('color-stock-rows').innerHTML = colors.map(c => `
+  const wrap = document.getElementById('color-stock-rows');
+  const raw = document.getElementById('colors-input').value || '';
+  const colors = raw.split(',').map(c => c.trim()).filter(Boolean);
+  if (!colors.length) { wrap.innerHTML = '<span class="variant-stock-empty">Add colours above first</span>'; return; }
+  wrap.innerHTML = colors.map(c => `
     <div class="variant-stock-row">
-      <span class="vs-label">${c}</span>
-      <input type="number" min="0" value="${colorStock[c] ?? 1}" onchange="colorStock['${c}'] = parseInt(this.value)||0">
-    </div>
-  `).join('');
-  colors.forEach(c => { if (colorStock[c] === undefined) colorStock[c] = 1; });
+      <span class="variant-stock-label">${c}</span>
+      <input type="number" min="0" placeholder="—" value="${variantColorStock[c] !== undefined ? variantColorStock[c] : ''}" oninput="setColorStock('${c}', this.value)">
+    </div>`).join('');
+}
+function setColorStock(color, val) {
+  if (val === '' || val === null) delete variantColorStock[color];
+  else variantColorStock[color] = Math.max(0, parseInt(val, 10) || 0);
 }
 
-function previewImage(input) {
+// ─── SIZE CHART (identical logic to admin add-product modal) ───────────
+const SIZE_CHART_PRESETS = {
+  tshirt: { columns: ["Size", "Chest", "Shoulder", "Length"], rows: [["S","38","16.5","27.5"],["M","40","17","28.2"],["L","42","17.5","29"],["XL","44","18","29.8"],["2XL","46.5","18.8","30.5"],["3XL","49","19.5","31.2"]] },
+  shirt: { columns: ["Size", "Chest", "Shoulder", "Length"], rows: [["S","40.8","17.2","29.6"],["M","42.8","18","30"],["L","44.8","18.8","30.4"],["XL","47.2","19.5","31.1"],["2XL","49.8","20.2","31.4"],["3XL","52.2","21","31.6"]] },
+  pants: { columns: ["Size", "Waist", "Length"], rows: [["28","28","41"],["30","30","41"],["32","32","41"],["34","34","41"],["36","36","41"],["38","38","41"],["40","40","41"],["42","42","41"]] },
+  kurti: { columns: ["Size", "Chest", "Waist", "Hip", "Length"], rows: [["S","36","30","38","44"],["M","38","32","40","44"],["L","40","34","42","45"],["XL","42","36","44","45"],["2XL","44","38","46","46"],["3XL","46","40","48","46"]] },
+  saree: { columns: ["Size", "Length", "Blouse"], rows: [["Free Size","5.5m","0.8m"]] },
+  custom: { columns: ["Size", "Measurement"], rows: [["",""]] }
+};
+
+function loadSizeChartPreset(type) {
+  if (!type) { hideSizeChartEditor(); return; }
+  const preset = SIZE_CHART_PRESETS[type];
+  renderSizeChartTable(preset.columns, preset.rows.map(r => [...r]));
+  showSizeChartEditor();
+}
+function showSizeChartEditor() {
+  document.getElementById('size-chart-editor').style.display = 'block';
+  document.getElementById('size-chart-empty-msg').style.display = 'none';
+}
+function hideSizeChartEditor() {
+  document.getElementById('size-chart-editor').style.display = 'none';
+  document.getElementById('size-chart-empty-msg').style.display = 'block';
+  document.getElementById('size-chart-thead').innerHTML = '';
+  document.getElementById('size-chart-tbody').innerHTML = '';
+}
+function renderSizeChartTable(columns, rows) {
+  const thead = document.getElementById('size-chart-thead');
+  const tbody = document.getElementById('size-chart-tbody');
+  thead.innerHTML = '<tr>' + columns.map((col, ci) => `
+    <th><input type="text" value="${escapeAttr(col)}" data-col-header="${ci}">
+    ${ci > 0 ? `<button type="button" class="col-remove-btn" onclick="removeSizeChartColumn(${ci})" title="Remove column">✕</button>` : ''}</th>
+  `).join('') + '<th class="col-remove"></th></tr>';
+  tbody.innerHTML = rows.map((row, ri) => `
+    <tr>${row.map((cell, ci) => `<td><input type="text" value="${escapeAttr(cell)}" data-row="${ri}" data-col="${ci}"></td>`).join('')}
+    <td class="col-remove"><button type="button" class="row-remove-btn" onclick="removeSizeChartRow(${ri})" title="Remove row">✕</button></td></tr>
+  `).join('');
+}
+function escapeAttr(str) { return String(str ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
+function collectSizeChartTable() {
+  const headerInputs = document.querySelectorAll('#size-chart-thead input[data-col-header]');
+  const columns = Array.from(headerInputs).map(inp => inp.value.trim() || 'Column');
+  const rowMap = {};
+  document.querySelectorAll('#size-chart-tbody input[data-row]').forEach(inp => {
+    const r = inp.dataset.row, c = parseInt(inp.dataset.col, 10);
+    if (!rowMap[r]) rowMap[r] = [];
+    rowMap[r][c] = inp.value;
+  });
+  const rows = Object.keys(rowMap).sort((a, b) => a - b).map(r => { const row = rowMap[r]; return columns.map((_, ci) => row[ci] ?? ''); });
+  return { columns, rows };
+}
+function addSizeChartRow() { const data = collectSizeChartTable(); data.rows.push(new Array(data.columns.length).fill('')); renderSizeChartTable(data.columns, data.rows); }
+function addSizeChartColumn() { const name = prompt('Column name (e.g. Hip, Sleeve):'); if (!name) return; const data = collectSizeChartTable(); data.columns.push(name.trim()); data.rows.forEach(r => r.push('')); renderSizeChartTable(data.columns, data.rows); }
+function removeSizeChartRow(idx) { const data = collectSizeChartTable(); data.rows.splice(idx, 1); renderSizeChartTable(data.columns, data.rows); }
+function removeSizeChartColumn(idx) { if (idx === 0) return; const data = collectSizeChartTable(); data.columns.splice(idx, 1); data.rows.forEach(r => r.splice(idx, 1)); renderSizeChartTable(data.columns, data.rows); }
+function clearSizeChart() { document.getElementById('size-chart-type-select').value = ''; hideSizeChartEditor(); }
+
+// ─── FRONT/BACK PHOTO UPLOADER ──────────────────────────────────────────
+function triggerPhotoPick(which) { document.getElementById(`${which}-file-picker`).click(); }
+
+function onPhotoPicked(which, input) {
   const file = input.files[0];
-  const preview = document.getElementById('img-preview');
-  if (!file) { preview.style.display = 'none'; return; }
-  if (file.size > 10 * 1024 * 1024) {
-    showToast('Image exceeds 10MB — please choose a smaller file', 'error');
+  if (!file) return;
+  if (file.size > MAX_PHOTO_SIZE) {
+    showToast(`${which === 'front' ? 'Front' : 'Back'} photo exceeds 10MB — please choose a smaller file`, 'error');
     input.value = '';
-    preview.style.display = 'none';
     return;
   }
-  preview.src = URL.createObjectURL(file);
-  preview.style.display = 'block';
+  photos[which] = file;
+  const drop = document.getElementById(`drop-${which}`);
+  drop.classList.add('has-image');
+  drop.innerHTML = `<img src="${URL.createObjectURL(file)}"><button type="button" class="photo-remove" onclick="event.stopPropagation(); removePhoto('${which}')">×</button>`;
 }
 
+function removePhoto(which) {
+  photos[which] = null;
+  document.getElementById(`${which}-file-picker`).value = '';
+  const drop = document.getElementById(`drop-${which}`);
+  drop.classList.remove('has-image');
+  drop.innerHTML = `<span class="plus">+</span><span class="hint">Tap to upload ${which} photo</span><button type="button" class="photo-remove" onclick="event.stopPropagation(); removePhoto('${which}')">×</button>`;
+}
+
+// ─── MODAL OPEN/CLOSE ────────────────────────────────────────────────────
 function openAddModal() {
   document.getElementById('request-form').reset();
-  document.getElementById('img-preview').style.display = 'none';
   document.getElementById('modal-alert').innerHTML = '';
-  sizeStock = {}; colorStock = {};
-  document.getElementById('size-stock-rows').innerHTML = '';
-  document.getElementById('color-stock-rows').innerHTML = '';
+  selectedSizes = []; variantSizeStock = {}; variantColorStock = {};
+  photos.front = null; photos.back = null;
+  removePhoto('front'); removePhoto('back');
+  clearSizeChart();
   selectGender('Girls');
+  loadSizePreset('standard', document.querySelector('.size-type-tab'));
+  renderColorStockRows();
   document.getElementById('add-modal').classList.add('open');
 }
-
 function closeAddModal() { document.getElementById('add-modal').classList.remove('open'); }
 
+// ─── SUBMIT ──────────────────────────────────────────────────────────────
 document.getElementById('request-form').addEventListener('submit', async function(e) {
   e.preventDefault();
   const btn = document.getElementById('submit-btn');
-  const sizes = document.getElementById('sizes-input').value.split(',').map(s => s.trim()).filter(Boolean);
-  if (!sizes.length) {
-    document.getElementById('modal-alert').innerHTML = '<div class="alert alert-danger">Please add at least one size</div>';
+
+  if (!selectedSizes.length) {
+    document.getElementById('modal-alert').innerHTML = '<div class="alert alert-danger">Please select at least one size</div>';
     return;
   }
-  const imageFile = document.getElementById('image-input').files[0];
-  if (!imageFile) {
-    document.getElementById('modal-alert').innerHTML = '<div class="alert alert-danger">Please upload a product photo</div>';
-    return;
-  }
-  if (imageFile.size > 10 * 1024 * 1024) {
-    document.getElementById('modal-alert').innerHTML = '<div class="alert alert-danger">Image exceeds 10MB limit</div>';
+  if (!photos.front || !photos.back) {
+    document.getElementById('modal-alert').innerHTML = '<div class="alert alert-danger">Please upload both front and back photos</div>';
     return;
   }
 
   btn.disabled = true; btn.textContent = 'Submitting...';
 
-  const colors = document.getElementById('colors-input').value.split(',').map(c => c.trim()).filter(Boolean);
-  const sizeStockOut = {}; sizes.forEach(s => { if (sizeStock[s] !== undefined) sizeStockOut[s] = sizeStock[s]; });
-  const colorStockOut = {}; colors.forEach(c => { if (colorStock[c] !== undefined) colorStockOut[c] = colorStock[c]; });
+  const colorsList = (document.getElementById('colors-input').value || '').split(',').map(c => c.trim()).filter(Boolean);
+  const sizeStockOut = {}; selectedSizes.forEach(s => { if (variantSizeStock[s] !== undefined) sizeStockOut[s] = variantSizeStock[s]; });
+  const colorStockOut = {}; colorsList.forEach(c => { if (variantColorStock[c] !== undefined) colorStockOut[c] = variantColorStock[c]; });
+
+  const editorVisible = document.getElementById('size-chart-editor').style.display !== 'none';
+  let sizeChartJson = '';
+  if (editorVisible) {
+    const data = collectSizeChartTable();
+    data.type = document.getElementById('size-chart-type-select').value || 'custom';
+    sizeChartJson = JSON.stringify(data);
+  }
 
   const fd = new FormData();
   fd.append('name', document.getElementById('name-input').value);
   fd.append('description', document.getElementById('description-input').value || '');
+  fd.append('fabric', document.getElementById('fabric-input').value || '');
   fd.append('shopkeeper_price', document.getElementById('price-input').value);
   fd.append('stock', document.getElementById('stock-input').value);
-  fd.append('sizes', JSON.stringify(sizes));
-  fd.append('colors', JSON.stringify(colors));
+  fd.append('sizes', JSON.stringify(selectedSizes));
+  fd.append('colors', JSON.stringify(colorsList));
   fd.append('size_stock', JSON.stringify(sizeStockOut));
   fd.append('color_stock', JSON.stringify(colorStockOut));
   fd.append('category', document.getElementById('category-select').value);
-  fd.append('gender', selectedGender);
-  fd.append('image', imageFile);
+  fd.append('gender', window.selectedGender || 'Girls');
+  if (sizeChartJson) fd.append('size_chart', sizeChartJson);
+  fd.append('image_front', photos.front);
+  fd.append('image_back', photos.back);
 
   try {
     const res = await fetch('/api/requests/submit', { method: 'POST', body: fd });
@@ -314,9 +584,7 @@ async function skLogout() {
   window.location = '/shopkeeper/login';
 }
 
-loadCategoryDropdown('Girls');
 loadRequests();
-loadLiveProducts();
 </script>
 </body>
 </html>

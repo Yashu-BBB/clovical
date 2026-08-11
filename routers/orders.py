@@ -689,6 +689,32 @@ async def shopkeeper_list_orders(status: str | None = None, shopkeeper=Depends(r
         raise HTTPException(status_code=500, detail="Failed to fetch orders")
 
 
+@router.delete("/shopkeeper/{order_id}")
+async def shopkeeper_delete_order(order_id: str, shopkeeper=Depends(require_shopkeeper)):
+    """Lets a shopkeeper remove an order from their own view. Ownership is
+    checked via the .eq(shopkeeper_id) filter on the delete itself, so this
+    can never touch another shopkeeper's order — if it doesn't match, the
+    delete simply affects zero rows."""
+    try:
+        existing = await run_query(
+            supabase_admin.table("orders").select("id")
+            .eq("id", order_id).eq("shopkeeper_id", shopkeeper["shopkeeper_id"]).single()
+        )
+        if not existing.data:
+            raise HTTPException(status_code=404, detail="Order not found")
+        await run_query(
+            supabase_admin.table("orders").delete()
+            .eq("id", order_id).eq("shopkeeper_id", shopkeeper["shopkeeper_id"])
+        )
+        logger.info(f"Shopkeeper {shopkeeper['shopkeeper_id']} deleted order {order_id}")
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Shopkeeper: failed to delete order {order_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to delete order")
+
+
 @router.get("/shopkeeper/{order_id}/pdf-data")
 async def shopkeeper_order_pdf_data(order_id: str, shopkeeper=Depends(require_shopkeeper)):
     """

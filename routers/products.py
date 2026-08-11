@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
 
-SAFE_FIELDS = "id,name,description,our_price,mrp,sizes,colors,image,images,category,gender,featured,stock,size_stock,color_stock,shopkeeper_code,view_count,created_at,size_chart"
+SAFE_FIELDS = "id,name,description,our_price,mrp,sizes,colors,image,images,category,gender,featured,stock,size_stock,color_stock,shopkeeper_code,view_count,created_at,size_chart,fabric"
 
 MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB per image
 MAX_TOTAL_IMAGES = 6
@@ -253,6 +253,7 @@ async def add_product(
     colors: str = Form("[]"),
     category: str = Form("", max_length=100),
     gender: str = Form("Girls"),
+    fabric: str = Form("", max_length=100),
     featured: bool = Form(False),
     stock: int = Form(1),
     mrp: float = Form(None),
@@ -327,6 +328,7 @@ async def add_product(
             "colors": json.loads(colors) if isinstance(colors, str) else colors,
             "category": category,
             "gender": gender,
+            "fabric": fabric or None,
             "mrp": mrp if mrp else None,
             "featured": featured,
             "stock": stock,
@@ -362,6 +364,7 @@ async def edit_product(
     colors: str = Form(None),
     category: str = Form(None, max_length=100),
     gender: str = Form(None),
+    fabric: str = Form(None, max_length=100),
     featured: bool = Form(None),
     stock: int = Form(None),
     mrp: float = Form(None),
@@ -390,6 +393,7 @@ async def edit_product(
         if category is not None and category.strip():
             updates["category"] = category
         if gender is not None: updates["gender"] = gender
+        if fabric is not None: updates["fabric"] = fabric or None
         if mrp is not None: updates["mrp"] = mrp if mrp > 0 else None
         if featured is not None: updates["featured"] = featured
         if stock is not None: updates["stock"] = stock
