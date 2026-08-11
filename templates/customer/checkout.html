@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Checkout — clovical</title>
   <link rel="stylesheet" href="/static/css/shared.css">
-  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
   <style>
     .checkout-layout {
       display: grid;
@@ -266,6 +266,173 @@
       padding: 100px 0;
     }
 
+    /* ─── LOGIN GATE ──────────────────────────────────────── */
+    .login-gate-wrap {
+      padding: 20px 0 80px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .login-gate-card {
+      width: 100%;
+      max-width: 440px;
+      background: #FFFFFF;
+      border: 1px solid #E8E8E8;
+      border-radius: var(--radius-lg);
+      padding: 40px 36px;
+    }
+
+    .login-gate-title {
+      font-family: var(--font-display);
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--off-white);
+      margin-bottom: 8px;
+    }
+
+    .login-gate-sub {
+      font-size: 0.85rem;
+      color: var(--muted);
+      line-height: 1.6;
+      margin-bottom: 28px;
+    }
+
+    .btn-google {
+      background: #FFFFFF;
+      border: 1px solid var(--border-soft);
+      color: var(--off-white);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .btn-google:hover {
+      border-color: #0A0A0A;
+      background: #FAFAFA;
+    }
+
+    .auth-divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 24px 0;
+      color: var(--muted-2);
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .auth-divider::before, .auth-divider::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    .link-btn {
+      background: none;
+      border: none;
+      padding: 0;
+      color: #0A0A0A;
+      font-weight: 600;
+      text-decoration: underline;
+      cursor: pointer;
+      font-size: inherit;
+      font-family: inherit;
+    }
+
+    .link-btn:disabled {
+      color: var(--muted-2);
+      text-decoration: none;
+      cursor: not-allowed;
+    }
+
+    /* ─── CUSTOMER STATUS BAR (post-login) ───────────────── */
+    .customer-status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-bottom: 24px;
+      padding-bottom: 18px;
+      border-bottom: 1px dashed var(--border);
+    }
+
+    /* ─── PAYMENT METHOD ──────────────────────────────────── */
+    .payment-method-section { margin-bottom: 24px; }
+
+    .payment-method-label {
+      font-size: 0.72rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+
+    .payment-method-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .payment-method-option {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 14px;
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+    }
+
+    .payment-method-option:hover { border-color: var(--border-soft); }
+
+    .payment-method-option.selected {
+      border-color: #0A0A0A;
+      background: #FAFAFA;
+      box-shadow: inset 0 0 0 1px #0A0A0A;
+    }
+
+    .payment-method-option-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    .payment-method-option-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--off-white);
+    }
+
+    .payment-method-option-sub {
+      font-size: 0.74rem;
+      color: var(--muted-2);
+      line-height: 1.4;
+    }
+
+    .payment-method-radio {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      border: 1px solid var(--border-soft);
+      flex-shrink: 0;
+      position: relative;
+    }
+
+    .payment-method-option.selected .payment-method-radio { border-color: #0A0A0A; }
+
+    .payment-method-option.selected .payment-method-radio::after {
+      content: "";
+      position: absolute;
+      inset: 3px;
+      background: #0A0A0A;
+      border-radius: 50%;
+    }
+
     @media (max-width: 900px) {
       .checkout-layout {
         grid-template-columns: 1fr;
@@ -280,6 +447,11 @@
       .form-card { padding: 24px 20px; }
       .summary-card { padding: 20px; }
       .checkout-progress { display: none; }
+      .login-gate-card { padding: 32px 22px; }
+    }
+
+    @media (max-width: 480px) {
+      .payment-method-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -316,7 +488,7 @@
         <div class="progress-line"></div>
         <div class="progress-step">
           <div class="progress-dot">3</div>
-          <span>WhatsApp</span>
+          <span>Payment</span>
         </div>
       </div>
     </div>
@@ -328,12 +500,93 @@
       <a href="/products" class="btn btn-primary btn-lg">Browse Products</a>
     </div>
 
-    <!-- Checkout Layout -->
-    <div class="checkout-layout" id="checkout-layout">
+    <!-- Login Gate — shown until the customer is authenticated -->
+    <div id="login-gate" class="login-gate-wrap" style="display:none">
+      <div class="login-gate-card">
+        <div class="section-eyebrow" style="margin-bottom:10px">Step 1 of 2</div>
+        <div class="login-gate-title">Sign in to continue</div>
+        <p class="login-gate-sub">
+          Your cart is saved. Sign in to enter your delivery details and place your order.
+        </p>
+
+        <div id="login-alert"></div>
+
+        <a href="/api/customer-auth/google?next=%2Fcheckout" class="btn btn-outline btn-block btn-lg btn-google">
+          <svg width="18" height="18" viewBox="0 0 48 48" style="flex-shrink:0">
+            <path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"/>
+            <path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/>
+            <path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"/>
+            <path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571c0.001-0.001,0.002-0.001,0.003-0.002l6.19,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z"/>
+          </svg>
+          Sign in with Google
+        </a>
+
+        <div class="auth-divider"><span>or</span></div>
+
+        <!-- Mobile OTP: phone entry step -->
+        <div id="otp-phone-step">
+          <div class="form-group" style="margin-bottom:14px">
+            <label class="form-label">Mobile Number</label>
+            <div class="phone-wrap">
+              <div class="phone-prefix">🇮🇳 +91</div>
+              <input class="form-control" id="login_phone"
+                placeholder="10-digit mobile number"
+                maxlength="10"
+                inputmode="numeric"
+                autocomplete="tel-national">
+            </div>
+            <div class="form-error" id="err-login-phone"></div>
+          </div>
+
+          <div class="captcha-wrap" style="margin-bottom:14px">
+            <div id="turnstile-otp-widget"></div>
+            <div class="form-error" id="err-otp-turnstile" style="margin-top:8px;display:none"></div>
+          </div>
+
+          <button class="btn btn-dark btn-block btn-lg" id="send-otp-btn" onclick="sendOtp()">
+            Continue with mobile OTP
+          </button>
+        </div>
+
+        <!-- Mobile OTP: code verification step -->
+        <div id="otp-verify-step" style="display:none">
+          <p style="font-size:0.82rem;color:var(--muted);margin-bottom:16px;line-height:1.6">
+            Enter the 6-digit code sent to <strong id="otp-sent-phone"></strong>.
+            <button type="button" class="link-btn" onclick="editPhone()">Change number</button>
+          </p>
+          <div class="form-group">
+            <label class="form-label">OTP Code</label>
+            <input class="form-control" id="login_otp"
+              placeholder="6-digit code"
+              maxlength="6"
+              inputmode="numeric"
+              autocomplete="one-time-code">
+            <div class="form-error" id="err-otp"></div>
+          </div>
+          <button class="btn btn-dark btn-block btn-lg" id="verify-otp-btn" onclick="verifyOtp()">
+            Verify & Continue
+          </button>
+          <p style="text-align:center;margin-top:14px;font-size:0.78rem;color:var(--muted-2)">
+            <button type="button" class="link-btn" id="resend-otp-btn" onclick="resendOtp()" disabled>
+              Resend OTP in <span id="resend-timer">30</span>s
+            </button>
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Checkout Layout — shown only once the customer is signed in -->
+    <div class="checkout-layout" id="checkout-layout" style="display:none">
 
       <!-- Delivery Form -->
       <div class="form-card">
         <div class="form-card-title">Delivery Details</div>
+
+        <!-- Signed-in status + logout -->
+        <div class="customer-status-bar" id="customer-status-bar" style="display:none">
+          <span id="customer-status-label"></span>
+          <button type="button" class="link-btn" onclick="logoutCustomer()">Log out</button>
+        </div>
 
         <div id="form-alert"></div>
 
@@ -396,32 +649,44 @@
         <div class="delivery-fee-notice" id="delivery-fee-notice" style="display:none">
           <div>
             <div class="delivery-fee-notice-label">🚚 Delivery Fee Applies</div>
-            <div class="delivery-fee-notice-sub">Added to your total below — you'll pay this along with your order on WhatsApp.</div>
+            <div class="delivery-fee-notice-sub">Added to your total below.</div>
           </div>
           <div class="delivery-fee-notice-amount" id="delivery-fee-notice-amount">₹0</div>
         </div>
 
+        <!-- Payment Method -->
+        <div class="payment-method-section">
+          <div class="payment-method-label">Payment Method</div>
+          <div class="payment-method-grid">
+            <div class="payment-method-option" id="payment-option-cashfree" data-method="cashfree" onclick="selectPaymentMethod('cashfree')">
+              <div class="payment-method-option-top">
+                <span class="payment-method-option-title">Pay Online</span>
+                <span class="payment-method-radio"></span>
+              </div>
+              <div class="payment-method-option-sub">Cards, UPI, Netbanking &amp; wallets via Cashfree</div>
+            </div>
+            <div class="payment-method-option" id="payment-option-cod" data-method="cod" onclick="selectPaymentMethod('cod')">
+              <div class="payment-method-option-top">
+                <span class="payment-method-option-title">Cash on Delivery</span>
+                <span class="payment-method-radio"></span>
+              </div>
+              <div class="payment-method-option-sub">Pay in cash when your order arrives</div>
+            </div>
+          </div>
+          <div class="form-error" id="err-payment-method" style="margin-top:8px"></div>
+        </div>
+
         <!-- Turnstile CAPTCHA -->
         <div class="captcha-wrap">
-          <div class="cf-turnstile"
-            data-sitekey="0x4AAAAAADrUAQmH1f5HqXtJ"
-            id="turnstile-widget"
-            data-callback="onTurnstileSuccess"
-            data-error-callback="onTurnstileError"
-            data-expired-callback="onTurnstileExpired"
-            data-timeout-callback="onTurnstileExpired"></div>
+          <div id="turnstile-widget"></div>
           <div class="form-error" id="err-turnstile" style="margin-top:8px;display:none"></div>
         </div>
 
-        <button class="btn btn-whatsapp btn-block btn-xl" onclick="placeOrder()" id="order-btn" disabled>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0">
-            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
-          </svg>
-          Place Order via WhatsApp
+        <button class="btn btn-primary btn-block btn-xl" onclick="placeOrder()" id="order-btn" disabled>
+          Select a payment method
         </button>
         <p class="place-order-note">
-          You'll be redirected to WhatsApp to complete payment<br>
-          UPI or Cash on Delivery · 100% secure
+          100% secure checkout · Your details are never shared with third parties
         </p>
       </div>
 
@@ -448,13 +713,282 @@
   <div id="toast-container"></div>
   <script src="/static/js/shared.js"></script>
   <script>
+    // ═══════════════════════════════════════════════════════════════════
+    // State
+    // ═══════════════════════════════════════════════════════════════════
     let deliveryFee = 0;
+    let selectedPaymentMethod = null;   // "cod" | "cashfree"
+    let currentCustomer = null;         // { id, phone, email }
 
+    let turnstileOtpWidgetId = null;
+    let turnstileOtpToken = "";
+
+    let turnstileOrderWidgetId = null;
+    let turnstileOrderVerified = false;
+    let turnstileOrderToken = "";
+
+    let resendInterval = null;
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Init — cart check, then the login gate genuinely blocks everything
+    // below it: the delivery form / payment method / order button only
+    // ever render after GET /api/customer-auth/me confirms a session.
+    // ═══════════════════════════════════════════════════════════════════
+    async function initCheckoutPage() {
+      handleAuthRedirectParams();
+
+      const items = Cart.get();
+      if (!items.length) {
+        document.getElementById("checkout-layout").style.display = "none";
+        document.getElementById("login-gate").style.display = "none";
+        document.getElementById("empty-cart-msg").style.display = "block";
+        return;
+      }
+
+      await refreshAuthState();
+    }
+
+    function handleAuthRedirectParams() {
+      const params = new URLSearchParams(window.location.search);
+      let touched = false;
+
+      if (params.get("login") === "success") {
+        showToast("Signed in with Google", "success");
+        touched = true;
+      }
+      const loginError = params.get("login_error");
+      if (loginError) {
+        showToast(loginErrorMessage(loginError), "error");
+        touched = true;
+      }
+
+      if (touched) {
+        params.delete("login");
+        params.delete("login_error");
+        const qs = params.toString();
+        window.history.replaceState({}, "", window.location.pathname + (qs ? "?" + qs : ""));
+      }
+    }
+
+    function loginErrorMessage(code) {
+      const messages = {
+        google_cancelled: "Google sign-in was cancelled.",
+        invalid_callback: "Sign-in failed. Please try again.",
+        state_invalid: "Sign-in session expired. Please try again.",
+        token_exchange_failed: "Google sign-in failed. Please try again.",
+        token_verification_failed: "Google sign-in failed. Please try again.",
+        no_google_id: "Google sign-in failed. Please try again.",
+        db_error: "Something went wrong. Please try again.",
+      };
+      return messages[code] || "Sign-in failed. Please try again.";
+    }
+
+    // ─── Auth state ─────────────────────────────────────────────────────
+    async function refreshAuthState() {
+      let session;
+      try {
+        session = await apiFetch("/api/customer-auth/me");
+      } catch (e) {
+        session = { logged_in: false, customer: null };
+      }
+
+      if (session.logged_in) {
+        currentCustomer = session.customer;
+        showCheckoutForm();
+      } else {
+        currentCustomer = null;
+        showLoginGate();
+      }
+    }
+
+    function showLoginGate() {
+      document.getElementById("login-gate").style.display = "flex";
+      document.getElementById("checkout-layout").style.display = "none";
+      renderOtpTurnstile();
+    }
+
+    function showCheckoutForm() {
+      document.getElementById("login-gate").style.display = "none";
+      document.getElementById("checkout-layout").style.display = "grid";
+      renderCustomerStatusBar();
+      renderOrderTurnstile();
+      loadDeliveryFee();
+      renderSummary();
+    }
+
+    function renderCustomerStatusBar() {
+      const bar = document.getElementById("customer-status-bar");
+      if (!currentCustomer) { bar.style.display = "none"; return; }
+      const label = currentCustomer.phone
+        ? `Signed in as +91 ${currentCustomer.phone}`
+        : `Signed in as ${currentCustomer.email || "your account"}`;
+      document.getElementById("customer-status-label").textContent = label;
+      bar.style.display = "flex";
+    }
+
+    async function logoutCustomer() {
+      try { await apiFetch("/api/customer-auth/logout", { method: "POST" }); } catch (e) {}
+      window.location.reload();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Turnstile — two independent widgets: one gates OTP send, one gates
+    // order placement. Explicit render (not the implicit data-sitekey
+    // scan) so a widget sitting inside a display:none section never
+    // renders before its section is actually shown.
+    // ═══════════════════════════════════════════════════════════════════
+    const TURNSTILE_SITEKEY = "0x4AAAAAADrUAQmH1f5HqXtJ";
+
+    function renderOtpTurnstile() {
+      if (turnstileOtpWidgetId !== null) return;
+      if (!window.turnstile) { setTimeout(renderOtpTurnstile, 200); return; }
+      turnstileOtpWidgetId = window.turnstile.render("#turnstile-otp-widget", {
+        sitekey: TURNSTILE_SITEKEY,
+        callback: (token) => {
+          turnstileOtpToken = token || "";
+          document.getElementById("err-otp-turnstile").style.display = "none";
+        },
+        "error-callback": () => { turnstileOtpToken = ""; showOtpTurnstileError(); },
+        "expired-callback": () => { turnstileOtpToken = ""; showOtpTurnstileError("Verification expired — please try again"); },
+        "timeout-callback": () => { turnstileOtpToken = ""; showOtpTurnstileError("Verification expired — please try again"); },
+      });
+    }
+
+    function showOtpTurnstileError(msg) {
+      const el = document.getElementById("err-otp-turnstile");
+      el.textContent = msg || "Please complete the human verification above";
+      el.style.display = "block";
+    }
+
+    function renderOrderTurnstile() {
+      if (turnstileOrderWidgetId !== null) return;
+      if (!window.turnstile) { setTimeout(renderOrderTurnstile, 200); return; }
+      turnstileOrderWidgetId = window.turnstile.render("#turnstile-widget", {
+        sitekey: TURNSTILE_SITEKEY,
+        callback: onTurnstileSuccess,
+        "error-callback": onTurnstileError,
+        "expired-callback": onTurnstileExpired,
+        "timeout-callback": onTurnstileExpired,
+      });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Mobile OTP login
+    // ═══════════════════════════════════════════════════════════════════
+    async function sendOtp() {
+      const phone = document.getElementById("login_phone").value.trim();
+      document.getElementById("login_phone").classList.remove("error");
+      document.getElementById("err-login-phone").textContent = "";
+
+      if (!/^[6-9]\d{9}$/.test(phone)) {
+        document.getElementById("login_phone").classList.add("error");
+        document.getElementById("err-login-phone").textContent = "Enter a valid 10-digit Indian mobile number";
+        return;
+      }
+      if (!turnstileOtpToken) {
+        showOtpTurnstileError();
+        return;
+      }
+
+      const btn = document.getElementById("send-otp-btn");
+      btn.disabled = true;
+      btn.textContent = "Sending OTP…";
+
+      try {
+        await apiFetch("/api/customer-auth/otp/send", {
+          method: "POST",
+          body: JSON.stringify({ phone, captcha_token: turnstileOtpToken })
+        });
+
+        document.getElementById("otp-sent-phone").textContent = "+91 " + phone;
+        document.getElementById("otp-phone-step").style.display = "none";
+        document.getElementById("otp-verify-step").style.display = "block";
+        document.getElementById("login_otp").value = "";
+        startResendTimer();
+        showToast("OTP sent", "success");
+      } catch (e) {
+        showToast(e.message || "Could not send OTP", "error");
+      } finally {
+        // OTP send tokens are single-use regardless of outcome.
+        turnstileOtpToken = "";
+        if (window.turnstile && turnstileOtpWidgetId !== null) {
+          try { window.turnstile.reset(turnstileOtpWidgetId); } catch (err) {}
+        }
+        btn.disabled = false;
+        btn.textContent = "Continue with mobile OTP";
+      }
+    }
+
+    function startResendTimer() {
+      let seconds = 30;
+      const btn = document.getElementById("resend-otp-btn");
+      btn.disabled = true;
+      btn.innerHTML = `Resend OTP in <span id="resend-timer">${seconds}</span>s`;
+      clearInterval(resendInterval);
+      resendInterval = setInterval(() => {
+        seconds -= 1;
+        if (seconds <= 0) {
+          clearInterval(resendInterval);
+          btn.disabled = false;
+          btn.textContent = "Resend OTP";
+        } else {
+          const span = document.getElementById("resend-timer");
+          if (span) span.textContent = seconds;
+        }
+      }, 1000);
+    }
+
+    function editPhone() {
+      clearInterval(resendInterval);
+      document.getElementById("otp-verify-step").style.display = "none";
+      document.getElementById("otp-phone-step").style.display = "block";
+    }
+
+    function resendOtp() {
+      editPhone();
+    }
+
+    async function verifyOtp() {
+      const phone = document.getElementById("login_phone").value.trim();
+      const otp = document.getElementById("login_otp").value.trim();
+      document.getElementById("login_otp").classList.remove("error");
+      document.getElementById("err-otp").textContent = "";
+
+      if (!/^\d{4,8}$/.test(otp)) {
+        document.getElementById("login_otp").classList.add("error");
+        document.getElementById("err-otp").textContent = "Enter the code sent to your phone";
+        return;
+      }
+
+      const btn = document.getElementById("verify-otp-btn");
+      btn.disabled = true;
+      btn.textContent = "Verifying…";
+
+      try {
+        await apiFetch("/api/customer-auth/otp/verify", {
+          method: "POST",
+          body: JSON.stringify({ phone, otp })
+        });
+        clearInterval(resendInterval);
+        showToast("Signed in!", "success");
+        await refreshAuthState();
+      } catch (e) {
+        document.getElementById("login_otp").classList.add("error");
+        document.getElementById("err-otp").textContent = e.message || "Incorrect OTP";
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Verify & Continue";
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Order summary (unchanged logic, now only ever runs post-login)
+    // ═══════════════════════════════════════════════════════════════════
     async function loadDeliveryFee() {
       try {
         const res = await apiFetch("/api/orders/delivery-fee");
         deliveryFee = res.delivery_fee || 0;
-      } catch(e) {
+      } catch (e) {
         deliveryFee = 0;
       }
       renderSummary();
@@ -464,6 +998,7 @@
       const items = Cart.get();
       if (!items.length) {
         document.getElementById("checkout-layout").style.display = "none";
+        document.getElementById("login-gate").style.display = "none";
         document.getElementById("empty-cart-msg").style.display = "block";
         return;
       }
@@ -497,6 +1032,40 @@
       document.getElementById("summary-total").textContent = formatPrice(total);
     }
 
+    // ═══════════════════════════════════════════════════════════════════
+    // Payment method selection
+    // ═══════════════════════════════════════════════════════════════════
+    function selectPaymentMethod(method) {
+      selectedPaymentMethod = method;
+      document.querySelectorAll(".payment-method-option").forEach(el => {
+        el.classList.toggle("selected", el.dataset.method === method);
+      });
+      document.getElementById("err-payment-method").textContent = "";
+      updateOrderButtonLabel();
+      updateOrderButtonState();
+    }
+
+    function updateOrderButtonLabel() {
+      const btn = document.getElementById("order-btn");
+      if (selectedPaymentMethod === "cashfree") {
+        btn.innerHTML = orderBtnIcon("lock") + " Pay Online Now";
+      } else if (selectedPaymentMethod === "cod") {
+        btn.innerHTML = orderBtnIcon("cash") + " Place Order (Cash on Delivery)";
+      } else {
+        btn.textContent = "Select a payment method";
+      }
+    }
+
+    function orderBtnIcon(kind) {
+      if (kind === "lock") {
+        return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;vertical-align:-4px;margin-right:4px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`;
+      }
+      return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;vertical-align:-4px;margin-right:4px"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg>`;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Delivery-form validation (unchanged fields, plus payment method)
+    // ═══════════════════════════════════════════════════════════════════
     function validate() {
       let ok = true;
       const name         = document.getElementById("customer_name").value.trim();
@@ -546,7 +1115,11 @@
         document.getElementById("err-pincode").textContent = "Enter a valid 6-digit Indian pincode";
         ok = false;
       }
-      if (!turnstileVerified) {
+      if (!selectedPaymentMethod) {
+        document.getElementById("err-payment-method").textContent = "Please choose a payment method";
+        ok = false;
+      }
+      if (!turnstileOrderVerified) {
         document.getElementById("err-turnstile").textContent = "Please complete the human verification above";
         document.getElementById("err-turnstile").style.display = "block";
         ok = false;
@@ -554,56 +1127,60 @@
       return ok;
     }
 
-    // ─── Turnstile state ────────────────────────────────────────────────
-    // The "Place Order" button starts disabled (see the button markup) and
-    // only becomes clickable once Turnstile hands back a success token.
-    // Any error/expiry immediately re-disables it — this is a hard block,
-    // mirrored by the backend refusing to create an order without a valid
-    // token, so neither side can be bypassed on its own.
-    let turnstileVerified = false;
-    let turnstileToken = "";
-
-    function updateOrderButtonState() {
-      const btn = document.getElementById("order-btn");
-      btn.disabled = !turnstileVerified;
-    }
-
+    // ─── Order-placement Turnstile state ───────────────────────────────
+    // The "Place Order" button starts disabled and only becomes clickable
+    // once BOTH a payment method is chosen AND Turnstile hands back a
+    // success token. Any Turnstile error/expiry re-disables it — this is
+    // a hard block, mirrored by the backend refusing to create an order
+    // without a valid token (or without a logged-in session), so neither
+    // side can be bypassed on its own.
     function onTurnstileSuccess(token) {
-      turnstileVerified = true;
-      turnstileToken = token || "";
+      turnstileOrderVerified = true;
+      turnstileOrderToken = token || "";
       document.getElementById("err-turnstile").style.display = "none";
       updateOrderButtonState();
     }
 
     function onTurnstileError() {
-      turnstileVerified = false;
-      turnstileToken = "";
+      turnstileOrderVerified = false;
+      turnstileOrderToken = "";
       document.getElementById("err-turnstile").textContent = "Please complete the human verification above";
       document.getElementById("err-turnstile").style.display = "block";
       updateOrderButtonState();
     }
 
     function onTurnstileExpired() {
-      turnstileVerified = false;
-      turnstileToken = "";
+      turnstileOrderVerified = false;
+      turnstileOrderToken = "";
       document.getElementById("err-turnstile").textContent = "Verification expired — please try again";
       document.getElementById("err-turnstile").style.display = "block";
       updateOrderButtonState();
     }
 
+    function updateOrderButtonState() {
+      const btn = document.getElementById("order-btn");
+      btn.disabled = !(turnstileOrderVerified && selectedPaymentMethod);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Place order
+    // ═══════════════════════════════════════════════════════════════════
     async function placeOrder() {
-      // Hard block — never proceed without a verified Turnstile token,
-      // regardless of how this function was invoked.
-      if (!turnstileVerified || !turnstileToken) {
-        onTurnstileError();
-        return;
-      }
+      // Hard block — never proceed without a signed-in session, a chosen
+      // payment method, and a verified Turnstile token, regardless of how
+      // this function was invoked. The backend re-checks all of this
+      // independently (require_customer + payment_method validation +
+      // Turnstile verification), so this is defense in depth, not the
+      // only guard.
+      if (!currentCustomer) { await refreshAuthState(); return; }
+      if (!turnstileOrderVerified || !turnstileOrderToken) { onTurnstileError(); return; }
       if (!validate()) return;
 
       const items = Cart.get();
       if (!items.length) { showToast("Cart is empty", "error"); return; }
 
       const btn = document.getElementById("order-btn");
+      const originalHtml = btn.innerHTML;
       btn.disabled = true;
       btn.innerHTML = `<span style="opacity:0.6">Placing order…</span>`;
 
@@ -623,7 +1200,8 @@
         product_id:       item.id,
         size:             item.size,
         color:            item.color,
-        captcha_token:    turnstileToken
+        captcha_token:    turnstileOrderToken,
+        payment_method:   selectedPaymentMethod,
       };
 
       try {
@@ -632,41 +1210,75 @@
           body: JSON.stringify(orderData)
         });
 
+        if (result.payment_method === "cashfree") {
+          // Order + Cashfree session are already created server-side.
+          // Hand off to Cashfree's own Checkout UI with the returned
+          // payment_session_id — do NOT clear the cart yet, since the
+          // customer hasn't actually paid until Cashfree confirms it
+          // (they may cancel/abandon the Cashfree screen).
+          await launchCashfreeCheckout(result);
+          return;
+        }
+
+        // COD — order is placed immediately, no further payment step.
         Cart.clear();
-
-        const adminPhone = result.admin_phone;
-        const waMsg  = encodeURIComponent(result.whatsapp_message);
-        const waUrl  = `https://wa.me/${adminPhone}?text=${waMsg}`;
-
-        showToast("Order placed! Opening WhatsApp…", "success");
-        setTimeout(() => { window.open(waUrl, "_blank"); }, 800);
-        setTimeout(() => { window.location = "/"; }, 2400);
-      } catch(e) {
+        showToast("Order placed successfully!", "success");
+        setTimeout(() => { window.location = "/"; }, 1800);
+      } catch (e) {
         showToast(e.message || "Failed to place order", "error");
 
         // Turnstile tokens are single-use — whether this failed because of
         // a captcha rejection or any other server error, the token we sent
         // is now spent. Reset the widget so the button stays hard-blocked
         // until the customer completes verification again.
-        turnstileVerified = false;
-        turnstileToken = "";
-        if (window.turnstile && document.getElementById("turnstile-widget")) {
-          try { window.turnstile.reset("#turnstile-widget"); } catch (resetErr) {}
+        turnstileOrderVerified = false;
+        turnstileOrderToken = "";
+        if (window.turnstile && turnstileOrderWidgetId !== null) {
+          try { window.turnstile.reset(turnstileOrderWidgetId); } catch (resetErr) {}
         }
 
-        btn.innerHTML = `
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0">
-            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
-          </svg>
-          Place Order via WhatsApp`;
-
+        btn.innerHTML = originalHtml;
         document.getElementById("err-turnstile").textContent = "Please complete the human verification above";
         document.getElementById("err-turnstile").style.display = "block";
         updateOrderButtonState();
       }
     }
 
-    loadDeliveryFee();
+    // ─── Cashfree Checkout hand-off ─────────────────────────────────────
+    let cashfreeSdkPromise = null;
+
+    function loadCashfreeSdk() {
+      if (window.Cashfree) return Promise.resolve();
+      if (cashfreeSdkPromise) return cashfreeSdkPromise;
+      cashfreeSdkPromise = new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = "https://sdk.cashfree.com/js/v3/cashfree.js";
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error("Could not load the payment gateway. Please try again."));
+        document.head.appendChild(script);
+      });
+      return cashfreeSdkPromise;
+    }
+
+    async function launchCashfreeCheckout(result) {
+      try {
+        await loadCashfreeSdk();
+        const cashfree = Cashfree({ mode: (result.cashfree_env || "SANDBOX").toLowerCase() });
+        // redirectTarget "_self" navigates this tab into Cashfree's hosted
+        // checkout UI; on completion Cashfree sends the browser back to
+        // the return_url configured server-side (routers/payments.py).
+        cashfree.checkout({
+          paymentSessionId: result.payment_session_id,
+          redirectTarget: "_self",
+        });
+      } catch (e) {
+        showToast(e.message || "Could not open the payment gateway", "error");
+        document.getElementById("order-btn").disabled = false;
+        updateOrderButtonLabel();
+      }
+    }
+
+    initCheckoutPage();
   </script>
 </body>
 </html>
