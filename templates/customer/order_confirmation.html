@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Order Confirmation — clovical</title>
+  <link rel="stylesheet" href="/static/css/shared.css">
+  <style>
+    .confirm-wrap {
+      padding: 64px 0 90px;
+      display: flex;
+      justify-content: center;
+    }
+    .confirm-card {
+      width: 100%;
+      max-width: 520px;
+      background: #FFFFFF;
+      border: 1px solid #E8E8E8;
+      border-radius: var(--radius-lg);
+      padding: 44px 36px;
+      text-align: center;
+    }
+    .confirm-icon {
+      width: 64px; height: 64px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 22px;
+    }
+    .confirm-icon.pending  { background: #F5F5F5; }
+    .confirm-icon.success  { background: var(--gold); }
+    .confirm-icon.failed   { background: #F5F5F5; }
+    .confirm-icon svg { width: 30px; height: 30px; }
+    .confirm-icon.success svg { stroke: #0A0A0A; fill: none; stroke-width: 2.4; }
+    .confirm-icon.failed svg  { stroke: #B23B3B; fill: none; stroke-width: 2.2; }
+
+    .spinner {
+      width: 30px; height: 30px;
+      border: 3px solid #E8E8E8;
+      border-top-color: #0A0A0A;
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .confirm-title {
+      font-family: var(--font-display);
+      font-size: 1.3rem; font-weight: 700;
+      color: var(--off-white);
+      margin-bottom: 10px;
+    }
+    .confirm-sub {
+      font-size: 0.85rem; color: var(--muted);
+      line-height: 1.6; margin-bottom: 28px;
+    }
+    .confirm-actions { display: flex; flex-direction: column; gap: 10px; }
+    .confirm-summary { text-align: left; margin: 28px 0; }
+  </style>
+</head>
+<body>
+
+  <nav class="navbar">
+    <a href="/" class="nav-logo">clovical</a>
+    <div class="nav-actions">
+      <button class="nav-icon-btn" onclick="window.location='/cart'" title="Cart">
+        <svg viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+        <span id="cart-badge" class="nav-badge" style="display:none">0</span>
+      </button>
+    </div>
+  </nav>
+
+  <div class="container">
+    <div class="confirm-wrap">
+      <div class="confirm-card" id="confirm-card">
+        <div class="confirm-icon pending"><div class="spinner"></div></div>
+        <div class="confirm-title" id="confirm-title">Verifying your payment…</div>
+        <div class="confirm-sub" id="confirm-sub">Please don't close this page. This usually takes a few seconds.</div>
+        <div id="confirm-summary"></div>
+        <div class="confirm-actions" id="confirm-actions"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/shared.js"></script>
+  <script>
+    // ── Params from the Cashfree return_url (see routers/payments.py) ──
+    // cf_order_id is display-only; checkout_group_id is what we actually
+    // poll on. Neither one is ever treated as proof of payment — only
+    // payment_records.payment_status (written exclusively by the webhook)
+    // decides that, via GET /api/payments/cashfree/status/{group}.
+    const params = new URLSearchParams(window.location.search);
+    const checkoutGroupId = params.get("checkout_group_id");
+
+    const POLL_INTERVAL_MS = 2500;
+    const MAX_POLLS = 24; // ~60s
+    let pollCount = 0;
+    let polling = false;
+
+    function setIcon(kind, svg) {
+      const el = document.querySelector(".confirm-icon");
+      el.className = "confirm-icon " + kind;
+      el.innerHTML = svg;
+    }
+    const CHECK_SVG = `<svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>`;
+    const X_SVG = `<svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+    const CLOCK_SVG = `<svg viewBox="0 0 24 24" stroke="#0A0A0A" stroke-width="1.8" fill="none"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>`;
+
+    function renderSuccess(order) {
+      setIcon("success", CHECK_SVG);
+      document.getElementById("confirm-title").textContent = "Order confirmed!";
+      document.getElementById("confirm-sub").textContent = "Your payment was verified and your order is now being processed.";
+      if (order) {
+        document.getElementById("confirm-summary").innerHTML = `
+          <div class="confirm-summary summary-card" style="box-shadow:none;border-color:#E8E8E8">
+            <div class="order-item">
+              <img class="order-item-img" src="${order.product_image || '/static/images/placeholder.svg'}" alt="">
+              <div class="order-item-info">
+                <div class="order-item-name">${order.product_name}</div>
+                <div class="order-item-meta">${order.size} · ${order.color}</div>
+              </div>
+              <div class="order-item-price">${formatPrice((order.our_price || 0) + (order.delivery_fee || 0))}</div>
+            </div>
+          </div>`;
+      }
+      document.getElementById("confirm-actions").innerHTML = `
+        <a href="/products" class="btn btn-primary btn-block">Continue Shopping</a>`;
+      Cart.clear(); // fires only from this genuinely-verified branch
+    }
+
+    function renderFailedOrCancelled(status) {
+      setIcon("failed", X_SVG);
+      const isCancelled = status === "CANCELLED" || status === "USER_DROPPED";
+      document.getElementById("confirm-title").textContent = isCancelled ? "Payment cancelled" : "Payment failed";
+      document.getElementById("confirm-sub").textContent = isCancelled
+        ? "You cancelled the payment before it completed. Your order has not been charged."
+        : "Your payment could not be completed. You have not been charged.";
+      document.getElementById("confirm-actions").innerHTML = `
+        <a href="/checkout" class="btn btn-primary btn-block">Try Again</a>
+        <a href="/cart" class="btn btn-outline btn-block">Back to Cart</a>`;
+    }
+
+    function renderTimeout() {
+      setIcon("pending", CLOCK_SVG);
+      document.getElementById("confirm-title").textContent = "Still confirming…";
+      document.getElementById("confirm-sub").textContent =
+        "Your payment is taking longer than usual to confirm. We'll update your order automatically once it's verified — please check back shortly.";
+      document.getElementById("confirm-actions").innerHTML = `
+        <a href="/" class="btn btn-outline btn-block">Back to Home</a>`;
+    }
+
+    function renderError(message) {
+      setIcon("failed", X_SVG);
+      document.getElementById("confirm-title").textContent = "Couldn't verify payment status";
+      document.getElementById("confirm-sub").textContent = message;
+      document.getElementById("confirm-actions").innerHTML = `
+        <a href="/" class="btn btn-outline btn-block">Back to Home</a>`;
+    }
+
+    async function fetchOrderSummary() {
+      try {
+        const data = await apiFetch(`/api/orders/mine?checkout_group_id=${encodeURIComponent(checkoutGroupId)}`);
+        return (data.orders && data.orders[0]) || null;
+      } catch (e) { return null; }
+    }
+
+    async function poll() {
+      if (polling) return;
+      polling = true;
+      pollCount++;
+      try {
+        const data = await apiFetch(`/api/payments/cashfree/status/${encodeURIComponent(checkoutGroupId)}`);
+        const status = data.payment_status; // PENDING | SUCCESS | FAILED | CANCELLED | USER_DROPPED
+
+        if (status === "SUCCESS") {
+          const order = await fetchOrderSummary();
+          renderSuccess(order);
+          return;
+        }
+        if (status === "FAILED" || status === "CANCELLED" || status === "USER_DROPPED") {
+          renderFailedOrCancelled(status);
+          return;
+        }
+        // still PENDING
+        if (pollCount >= MAX_POLLS) { renderTimeout(); return; }
+        polling = false;
+        setTimeout(poll, POLL_INTERVAL_MS);
+      } catch (e) {
+        // A transient network/server error while polling isn't the same
+        // as a resolved bad status — retry a few times before giving up.
+        if (pollCount >= MAX_POLLS) {
+          renderError(e.message === "HTTP 401"
+            ? "Please sign in to view your order status."
+            : "We couldn't reach the server to confirm your payment. If money was deducted, it will still be verified automatically — check your orders shortly.");
+          return;
+        }
+        polling = false;
+        setTimeout(poll, POLL_INTERVAL_MS);
+      }
+    }
+
+    if (!checkoutGroupId) {
+      renderError("Missing order reference. If you completed a payment, please check back on the home page shortly — it will be confirmed automatically once verified.");
+    } else {
+      poll();
+    }
+  </script>
+</body>
+</html>

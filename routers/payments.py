@@ -107,11 +107,26 @@ BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
 # Cashfree substitutes the literal "{order_id}" placeholder with the real
 # order_id when it redirects the customer back. This return_url is display
 # convenience ONLY — see module docstring, the redirect is never treated
-# as payment proof.
+# as payment proof. Points at the dedicated confirmation page (built
+# alongside this change), which polls /status/{checkout_group_id} for the
+# real, webhook-verified outcome rather than trusting this redirect.
 CASHFREE_RETURN_URL = os.getenv(
     "CASHFREE_RETURN_URL",
-    f"{BASE_URL}/checkout?cf_order_id={{order_id}}"
+    f"{BASE_URL}/order/confirmation?cf_order_id={{order_id}}"
 )
+
+
+def _return_url_for(checkout_group_id: str) -> str:
+    """
+    Appends checkout_group_id to CASHFREE_RETURN_URL so the confirmation
+    page can call /status/{checkout_group_id} without relying on any
+    client-side state (sessionStorage, etc.) surviving the trip to
+    Cashfree's hosted checkout and back. Works whether CASHFREE_RETURN_URL
+    is left at its default or overridden in the environment, as long as
+    the "{order_id}" placeholder is preserved somewhere in it.
+    """
+    sep = "&" if "?" in CASHFREE_RETURN_URL else "?"
+    return f"{CASHFREE_RETURN_URL}{sep}checkout_group_id={checkout_group_id}"
 CASHFREE_NOTIFY_URL = os.getenv(
     "CASHFREE_NOTIFY_URL",
     f"{BASE_URL}/api/payments/cashfree/webhook"
@@ -163,6 +178,7 @@ async def create_cashfree_order(
     amount: float,
     customer_details: dict,
     order_tags: dict,
+    return_url: str,
 ) -> dict:
     """
     Creates an order on Cashfree and returns the raw JSON response
@@ -177,7 +193,7 @@ async def create_cashfree_order(
         "order_currency": "INR",
         "customer_details": customer_details,
         "order_meta": {
-            "return_url": CASHFREE_RETURN_URL,
+            "return_url": return_url,
             "notify_url": CASHFREE_NOTIFY_URL,
         },
         "order_tags": order_tags,
@@ -451,7 +467,10 @@ async def create_payment_session(req: CreateSessionRequest, request: Request, cu
         "source": "clovical_web",
     }
 
-    cf_response = await create_cashfree_order(cf_order_id, total_amount, customer_details, order_tags)
+    cf_response = await create_cashfree_order(
+        cf_order_id, total_amount, customer_details, order_tags,
+        _return_url_for(req.checkout_group_id),
+    )
     payment_session_id = cf_response["payment_session_id"]
 
     try:

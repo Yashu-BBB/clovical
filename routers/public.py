@@ -38,6 +38,10 @@ async def wishlist(request: Request):
 async def checkout(request: Request):
     return render("customer/checkout.html", request)
 
+@router.get("/order/confirmation", response_class=HTMLResponse)
+async def order_confirmation(request: Request):
+    return render("customer/order_confirmation.html", request)
+
 
 # ─── Admin Pages ──────────────────────────────────────────────────────────
 

@@ -562,6 +562,34 @@ async def create_order(order: OrderRequest, request: Request, customer=Depends(r
     }
 
 
+# ─── CUSTOMER ENDPOINTS ────────────────────────────────────────────────────
+
+@router.get("/mine")
+async def my_orders(checkout_group_id: str | None = None, customer=Depends(require_customer)):
+    """
+    Minimal, read-only order lookup for the logged-in customer — built for
+    the post-Cashfree confirmation page's order summary, not a full order
+    history view (that's still out of scope). Always scoped to the
+    requesting customer's own user_id; checkout_group_id further narrows
+    to a single checkout when provided.
+    """
+    try:
+        query = (
+            supabase_admin.table("orders")
+            .select("id,product_name,product_image,size,color,our_price,delivery_fee,"
+                    "payment_type,payment_status,status,checkout_group_id,created_at")
+            .eq("user_id", customer["sub"])
+        )
+        if checkout_group_id:
+            query = query.eq("checkout_group_id", checkout_group_id)
+        res = await run_query(query.order("created_at", desc=True).limit(50))
+    except Exception as e:
+        logger.error(f"Failed to fetch orders for customer {customer['sub']}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch orders")
+
+    return {"orders": res.data or []}
+
+
 # ─── ADMIN ENDPOINTS ──────────────────────────────────────────────────────
 
 @router.get("/admin/all")
