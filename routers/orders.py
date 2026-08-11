@@ -1,15 +1,17 @@
 import re
+import uuid
 import asyncio
 import base64
 import logging
 import requests
+from typing import Literal
 from datetime import datetime, timezone
 from fastapi import APIRouter, Request, HTTPException, Depends
 from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from utils.db import supabase_admin, run_query, run_blocking
-from utils.auth_utils import require_admin, require_shopkeeper
+from utils.auth_utils import require_admin, require_shopkeeper, require_customer
 from utils.captcha import verify_turnstile
 from utils.whatsapp_utils import (
     send_text, send_image_url, send_upi_qr,
@@ -19,12 +21,14 @@ from utils.whatsapp_utils import (
 from utils.nimbuspost import create_shipment
 from utils.label_generator import build_shopkeeper_package_pdf
 from utils.cache import cache_get, cache_set, cache_delete, two_layer_get, two_layer_set, mem_clear_pattern, cache_clear_pattern
+# Reused as-is for the Cashfree path below — create_order() must never
+# reimplement Cashfree order-creation/session logic itself (see routers/
+# payments.py docstring for why that file owns this end-to-end).
+from routers.payments import create_payment_session, CreateSessionRequest
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
-
-WA_NUMBER = __import__("os").getenv("WHATSAPP_NUMBER", "")
 
 
 class OrderRequest(BaseModel):
@@ -39,6 +43,11 @@ class OrderRequest(BaseModel):
     size: str = Field(..., max_length=50)
     color: str = Field(..., max_length=100)
     captcha_token: str = Field("", max_length=2000)
+    # "cod" or "cashfree" only — anything else is rejected by pydantic
+    # before create_order() ever runs. There is deliberately no "upi"
+    # option any more: that was the old WhatsApp-screenshot flow, which
+    # customers no longer place orders through (see create_order()).
+    payment_method: Literal["cod", "cashfree"]
 
 
 class StatusUpdate(BaseModel):
@@ -322,7 +331,7 @@ async def create_shipment_for_order(order: dict) -> dict | None:
 
 @router.post("/create")
 @limiter.limit("5/minute")
-async def create_order(order: OrderRequest, request: Request):
+async def create_order(order: OrderRequest, request: Request, customer=Depends(require_customer)):
     client_ip = request.headers.get("CF-Connecting-IP") or request.client.host
 
     # Verify captcha — hard block, never create an order without it.
@@ -399,6 +408,23 @@ async def create_order(order: OrderRequest, request: Request):
     elif prod.get("image"):
         main_image_url = prod["image"]
 
+    # checkout_group_id groups every order row created from one checkout —
+    # this endpoint creates a single order row per call, but the column is
+    # always populated (matching schema_checkout_migration.sql's "COD and
+    # Cashfree both use this") so a future multi-item cart or "my orders"
+    # view can group/filter consistently regardless of payment method.
+    checkout_group_id = str(uuid.uuid4())
+
+    # payment_type/payment_status branch on the now-required payment_method.
+    # "upi" (the old WhatsApp-screenshot flow) is no longer a valid value
+    # here at all — OrderRequest.payment_method only accepts "cod"/"cashfree".
+    if order.payment_method == "cod":
+        payment_type = "cod"
+        payment_status = "pending"        # unchanged from today's COD behaviour
+    else:
+        payment_type = "cashfree"
+        payment_status = "awaiting_payment"
+
     # Create order
     try:
         order_data = {
@@ -416,13 +442,23 @@ async def create_order(order: OrderRequest, request: Request):
             "shopkeeper_price": prod["shopkeeper_price"],
             "shopkeeper_id": prod["shopkeeper_id"],
             "shopkeeper_code": prod["shopkeeper_code"],
-            "payment_type": "upi",
+            "payment_type": payment_type,
+            "payment_status": payment_status,
             "delivery_fee": delivery_fee,
+            # Never trust a user_id supplied by the frontend — OrderRequest
+            # has no such field, and this is the only place user_id is set:
+            # always the logged-in customer's own id from their session
+            # cookie (require_customer), never anything client-supplied.
+            "user_id": customer["sub"],
+            "checkout_group_id": checkout_group_id,
             "agent_state": {}
         }
         res = await run_query(supabase_admin.table("orders").insert(order_data))
         new_order = res.data[0]
-        logger.info(f"Order created: {new_order['id']}, customer: {order.customer_phone}, product: {prod['name']}")
+        logger.info(
+            f"Order created: {new_order['id']}, customer: {order.customer_phone}, "
+            f"product: {prod['name']}, payment_method: {order.payment_method}"
+        )
 
         await cache_delete("orders:recent")
         await cache_delete("admin:dashboard")
@@ -469,33 +505,60 @@ async def create_order(order: OrderRequest, request: Request):
     except Exception as e:
         logger.warning(f"Stock update failed for {order.product_id}: {e}", exc_info=True)
 
-    total_amount = prod["our_price"] + delivery_fee
-    price_lines = (
-        f"Price: ₹{prod['our_price']:.0f}\n"
-        f"Delivery: ₹{delivery_fee:.0f}\n"
-        f"Total: ₹{total_amount:.0f}\n\n"
-    ) if delivery_fee else f"Price: ₹{prod['our_price']:.0f}\n\n"
+    # No WhatsApp redirect for either payment method any more — the
+    # customer's order is placed and confirmed entirely through this API
+    # response (COD) or the Cashfree Checkout flow (below). The old
+    # admin_notification / whatsapp_message / admin_phone WhatsApp-deep-link
+    # payload that used to send the customer to WhatsApp to "place" the
+    # order has been removed. WhatsApp itself is untouched elsewhere: the
+    # bot/webhook in routers/whatsapp.py still exists for shopkeeper package
+    # PDF pulls, and admin-side customer notifications (order confirmed,
+    # shipped, delivered, etc.) still fire from update_order() below.
+    if order.payment_method == "cod":
+        return {
+            "success": True,
+            "order_id": new_order["id"],
+            "payment_method": "cod",
+            "product_image": main_image_url,
+        }
 
-    admin_notification = (
-        f"🛍️ New Order!\n\n"
-        f"Product: {prod['name']}\n"
-        f"Code: {prod['shopkeeper_code']}\n"
-        f"Size: {order.size} | Color: {order.color}\n"
-        f"{price_lines}"
-        f"👤 Customer Details:\n"
-        f"Name: {order.customer_name}\n"
-        f"Phone: {order.customer_phone}\n"
-        f"Address: {order.customer_address}\n"
-        f"City: {order.customer_city}\n"
-        f"Pincode: {order.customer_pincode}"
+    # ── Cashfree: hand off to the existing payments router ──────────────
+    # This endpoint does no Cashfree API calls, no payment_records writes,
+    # and no order-status transitions of its own beyond what was already
+    # written above (payment_status="awaiting_payment"). It only calls the
+    # already-built, already-tested create_payment_session() from
+    # routers/payments.py — the single owner of all Cashfree logic.
+    #
+    # Called as a direct function call rather than a real HTTP round-trip
+    # to POST /api/payments/cashfree/create-session: it's the same request
+    # (so the same customer/request context) and the same process, so an
+    # actual self-HTTP-call would need BASE_URL configured to reach itself,
+    # would re-forward cookies for no benefit (we already have `customer`
+    # from require_customer right here), and adds a needless network hop
+    # inside a request that's still holding the DB writes above. This still
+    # satisfies "only call into the existing router" — zero Cashfree logic
+    # is reimplemented here, create_payment_session's own auth (Depends
+    # (require_customer)), rate limit, and error handling all still apply
+    # exactly as they do when the frontend calls that endpoint directly
+    # (e.g. for a payment retry). If you'd rather this be a literal HTTP
+    # call instead, that's a one-line swap to httpx.post(...) — happy to
+    # make that change if you prefer it.
+    session_result = await create_payment_session(
+        CreateSessionRequest(checkout_group_id=checkout_group_id),
+        request,
+        customer,
     )
 
     return {
         "success": True,
         "order_id": new_order["id"],
-        "admin_phone": WA_NUMBER,
-        "whatsapp_message": admin_notification,
-        "product_image": main_image_url
+        "payment_method": "cashfree",
+        "checkout_group_id": checkout_group_id,
+        "payment_session_id": session_result["payment_session_id"],
+        "cashfree_order_id": session_result["cashfree_order_id"],
+        "amount": session_result["amount"],
+        "cashfree_env": session_result["cashfree_env"],
+        "product_image": main_image_url,
     }
 
 
