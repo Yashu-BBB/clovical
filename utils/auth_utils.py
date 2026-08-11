@@ -10,7 +10,8 @@ logger = logging.getLogger(__name__)
 
 SECRET_KEY = os.getenv("SECRET_KEY", "changeme-in-production")
 SESSION_TTL = 3600 * 4  # 4 hours
-SHOPKEEPER_SESSION_TTL = 3600 * 4  # 4 hours, same as admin
+SHOPKEEPER_SESSION_TTL = 3600 * 4       # 4 hours
+CUSTOMER_SESSION_TTL = 3600 * 24 * 7  # 7 days, same as admin
 
 if SECRET_KEY == "changeme-in-production":
     logger.critical(
@@ -83,3 +84,40 @@ def require_shopkeeper(request: Request) -> dict:
     if not sk:
         raise HTTPException(status_code=401, detail="Unauthorized")
     return sk
+
+
+# ─── Customer sessions ──────────────────────────────────────────────────────
+# Cookie: "customer_token" — httponly, secure, samesite=lax, 7-day TTL.
+# Payload shape: {sub: customer_id, phone, email, role: "customer", iat, exp}
+# Completely separate from admin/shopkeeper tokens — a customer cookie can
+# never be mistaken for an admin/shopkeeper session (role claim differs, cookie
+# name differs). Both admin and customer cookies can be present simultaneously
+# without collision (e.g. an admin testing the storefront).
+
+def create_customer_token(customer_id: str, phone: str | None, email: str | None) -> str:
+    payload = {
+        "sub": customer_id,
+        "phone": phone or "",
+        "email": email or "",
+        "role": "customer",
+        "iat": time.time(),
+        "exp": time.time() + CUSTOMER_SESSION_TTL,
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+
+
+def get_customer_from_request(request: Request) -> dict | None:
+    token = request.cookies.get("customer_token")
+    if not token:
+        return None
+    payload = decode_token(token)
+    if not payload or payload.get("role") != "customer":
+        return None
+    return payload
+
+
+def require_customer(request: Request) -> dict:
+    customer = get_customer_from_request(request)
+    if not customer:
+        raise HTTPException(status_code=401, detail="Login required")
+    return customer
