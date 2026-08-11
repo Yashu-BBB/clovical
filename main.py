@@ -17,7 +17,7 @@ from slowapi.errors import RateLimitExceeded
 import redis.asyncio as aioredis
 import os
 
-from routers import auth, products, orders, shopkeepers, admin, whatsapp, analytics, public, categories, shopkeeper_auth, shopkeeper_panel, requests as product_requests
+from routers import auth, products, orders, shopkeepers, admin, whatsapp, analytics, public, categories, shopkeeper_auth, shopkeeper_panel, requests as product_requests, customer_auth, payments
 from utils.db import supabase_admin, run_query, run_blocking
 from utils.cache import init_redis, close_redis
 
@@ -203,6 +203,8 @@ app.include_router(categories.router, prefix="/api/categories")
 app.include_router(shopkeeper_auth.router, prefix="/api/shopkeeper-auth")
 app.include_router(shopkeeper_panel.router, prefix="/api/shopkeeper")
 app.include_router(product_requests.router, prefix="/api/requests")
+app.include_router(customer_auth.router, prefix="/api/customer-auth")
+app.include_router(payments.router, prefix="/api/payments/cashfree")
 
 # Expose blocked_ips and failed_attempts globally for auth router
 app.state.blocked_ips = blocked_ips
