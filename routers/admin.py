@@ -72,9 +72,8 @@ async def dashboard_data(request: Request, admin=Depends(require_admin)):
         failed_package_pdfs = failed_pdf_res.data or []
 
         # Orders whose package PDF is built and waiting — these are NOT sent
-        # automatically; they go out only when the shopkeeper's own
-        # registered WhatsApp number messages the bot asking for their
-        # orders (see handle_shopkeeper_order_pull in routers/whatsapp.py).
+        # anywhere automatically; they're downloaded on demand from the
+        # admin/shopkeeper panel (see .../package-pdf in routers/orders.py).
         ready_pdf_res = await run_query(
             supabase_admin.table("orders").select("id", count="exact").eq("package_pdf_status", "ready")
         )
@@ -295,12 +294,10 @@ async def resend_package_pdf(order_id: str, admin=Depends(require_admin)):
     if the order already has one, so the barcode/AWB on page 2 is still
     correct.
 
-    This does NOT send anything over WhatsApp — it only (re)builds the PDF
-    and leaves it at package_pdf_status='ready'. Delivery only ever happens
-    when the shopkeeper's own registered number messages the bot asking for
-    their orders (see handle_shopkeeper_order_pull in routers/whatsapp.py).
-    Sending it automatically from here would reintroduce the same
-    unsolicited-push pattern that got the WhatsApp number restricted.
+    This does NOT send anything anywhere — it only (re)builds the PDF and
+    leaves it at package_pdf_status='ready'. It's picked up from there by
+    downloading it on demand from the admin/shopkeeper panel (see
+    .../package-pdf in routers/orders.py); there is no automatic push.
     """
     from routers.orders import _generate_shopkeeper_package_pdf
 

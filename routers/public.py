@@ -42,6 +42,10 @@ async def checkout(request: Request):
 async def order_confirmation(request: Request):
     return render("customer/order_confirmation.html", request)
 
+@router.get("/my-orders", response_class=HTMLResponse)
+async def my_orders_page(request: Request):
+    return render("customer/my_orders.html", request)
+
 
 # ─── Admin Pages ──────────────────────────────────────────────────────────
 

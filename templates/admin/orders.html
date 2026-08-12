@@ -207,6 +207,7 @@ async function loadOrders() {
           <div class="ship-actions">
             <button class="btn btn-outline btn-sm" onclick='openUpdate(${JSON.stringify(o)})'>Update</button>
             <button class="btn btn-outline btn-sm" onclick="downloadOrderPDF('${o.id}', this)">📄 PDF</button>
+            ${o.package_pdf_status === 'ready' ? `<button class="btn btn-outline btn-sm" onclick="downloadPackagePDF('${o.id}', this)">📦 Package PDF</button>` : ''}
             ${!o.nimbuspost_awb
               ? (NIMBUSPOST_CONFIGURED
                   ? `<button class="btn btn-primary btn-sm" onclick="createShipment('${o.id}')">Create Shipment</button>`
@@ -268,7 +269,7 @@ async function saveStatus() {
 
   try {
     await apiFetch(`/api/orders/admin/${currentOrderId}`, { method: "PUT", body: JSON.stringify(payload) });
-    showToast("Order updated! ✅ WhatsApp notification sent.");
+    showToast("Order updated ✅");
     closeModal();
     loadOrders();
   } catch(e) {
@@ -365,6 +366,35 @@ async function downloadOrderPDF(orderId, btnEl) {
     await buildOrderPDF(data);
   } catch (e) {
     showToast(e.message || "Failed to generate PDF", "error");
+  } finally {
+    btnEl.disabled = false;
+    btnEl.innerHTML = originalHTML;
+  }
+}
+
+// Downloads the pre-built package PDF (product photo + NimbusPost's real
+// barcode label) generated automatically after shipment — different from
+// "📄 PDF" above, which renders a slip client-side on demand.
+async function downloadPackagePDF(orderId, btnEl) {
+  const originalHTML = btnEl.innerHTML;
+  btnEl.disabled = true;
+  btnEl.innerHTML = '<span class="btn-spinner"></span>Downloading...';
+  try {
+    const data = await apiFetch(`/api/orders/admin/${orderId}/package-pdf`);
+    const byteChars = atob(data.content_base64);
+    const bytes = new Uint8Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+    const blob = new Blob([bytes], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = data.filename || `order_${orderId.slice(0, 8)}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    showToast(e.message || "Failed to download package PDF", "error");
   } finally {
     btnEl.disabled = false;
     btnEl.innerHTML = originalHTML;

@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Orders — clovical</title>
+  <link rel="stylesheet" href="/static/css/shared.css">
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
+  <style>
+    /* ─── PAGE HEADER (same pattern as checkout.html's .checkout-head) ── */
+    .orders-head {
+      padding: 48px 0 32px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* ─── LOGIN GATE — copied wholesale from checkout.html so signing in
+       here feels identical to signing in at checkout. ─────────────────── */
+    .login-gate-wrap {
+      padding: 20px 0 80px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .login-gate-card {
+      width: 100%;
+      max-width: 440px;
+      background: #FFFFFF;
+      border: 1px solid #E8E8E8;
+      border-radius: var(--radius-lg);
+      padding: 40px 36px;
+    }
+
+    .login-gate-title {
+      font-family: var(--font-display);
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--off-white);
+      margin-bottom: 8px;
+    }
+
+    .login-gate-sub {
+      font-size: 0.85rem;
+      color: var(--muted);
+      line-height: 1.6;
+      margin-bottom: 28px;
+    }
+
+    .btn-google {
+      background: #FFFFFF;
+      border: 1px solid var(--border-soft);
+      color: var(--off-white);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .btn-google:hover {
+      border-color: #0A0A0A;
+      background: #FAFAFA;
+    }
+
+    .auth-divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 24px 0;
+      color: var(--muted-2);
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .auth-divider::before, .auth-divider::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    .link-btn {
+      background: none;
+      border: none;
+      padding: 0;
+      color: #0A0A0A;
+      font-weight: 600;
+      text-decoration: underline;
+      cursor: pointer;
+      font-size: inherit;
+      font-family: inherit;
+    }
+
+    .link-btn:disabled {
+      color: var(--muted-2);
+      text-decoration: none;
+      cursor: not-allowed;
+    }
+
+    .phone-wrap { display: flex; align-items: stretch; gap: 0; }
+    .phone-prefix {
+      display: flex; align-items: center; gap: 6px;
+      padding: 0 14px; background: #F5F5F5;
+      border: 1px solid #E8E8E8; border-right: none;
+      border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+      font-size: 0.82rem; font-weight: 600; color: var(--muted);
+      white-space: nowrap; flex-shrink: 0;
+    }
+    .phone-wrap .form-control { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+    .captcha-wrap { margin-bottom: 24px; }
+
+    /* ─── CUSTOMER STATUS BAR (post-login) ───────────────── */
+    .customer-status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-bottom: 28px;
+      padding-bottom: 18px;
+      border-bottom: 1px dashed var(--border);
+    }
+
+    /* ─── ORDER LIST (same card language as .summary-card / .order-item
+       in checkout.html + order_confirmation.html) ────────────────────── */
+    .orders-wrap { padding: 32px 0 80px; }
+
+    .order-card {
+      background: #FFFFFF;
+      border: 1px solid #E8E8E8;
+      border-radius: var(--radius-lg);
+      padding: 22px 24px;
+      margin-bottom: 16px;
+    }
+
+    .order-card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .order-card-date {
+      font-size: 0.72rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted-2);
+    }
+
+    .order-item {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+    }
+
+    .order-item-img {
+      width: 56px;
+      height: 70px;
+      object-fit: cover;
+      border-radius: var(--radius-sm);
+      background: #F5F5F5;
+      flex-shrink: 0;
+    }
+
+    .order-item-info { flex: 1; min-width: 0; }
+
+    .order-item-name {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--off-white);
+      margin-bottom: 3px;
+    }
+
+    .order-item-meta {
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    .order-item-price {
+      font-size: 0.92rem;
+      font-weight: 700;
+      color: #0A0A0A;
+      white-space: nowrap;
+    }
+
+    .order-card-bottom {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-top: 16px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+
+    .order-payment-line {
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+
+    .order-tracking-line {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+
+    .order-tracking-line a {
+      color: #0A0A0A;
+      font-weight: 600;
+      text-decoration: underline;
+    }
+
+    .empty-orders {
+      text-align: center;
+      padding: 100px 0;
+    }
+
+    .orders-skeleton {
+      height: 130px;
+      border-radius: var(--radius-lg);
+      margin-bottom: 16px;
+    }
+
+    @media (max-width: 480px) {
+      .order-card-bottom { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="navbar">
+    <a href="/" class="nav-logo">clovical</a>
+    <div class="nav-links">
+      <a href="/products">Shop</a>
+      <a href="/my-orders">My Orders</a>
+      <a href="/wishlist">Wishlist</a>
+    </div>
+    <div class="nav-actions">
+      <button class="nav-icon-btn" onclick="window.location='/my-orders'" title="My Orders">
+        <svg viewBox="0 0 24 24"><path d="M20 7 12 3 4 7v10l8 4 8-4V7Z"/><path d="M4 7l8 4 8-4"/><path d="M12 11v10"/></svg>
+      </button>
+      <button class="nav-icon-btn" onclick="window.location='/wishlist'" title="Wishlist">
+        <svg viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"/></svg>
+        <span id="wishlist-badge" class="nav-badge" style="display:none">0</span>
+      </button>
+      <button class="nav-icon-btn" onclick="window.location='/cart'" title="Cart">
+        <svg viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+        <span id="cart-badge" class="nav-badge" style="display:none">0</span>
+      </button>
+    </div>
+  </nav>
+
+  <div class="container">
+
+    <div class="orders-head">
+      <div class="section-eyebrow">Your account</div>
+      <h1 class="section-title">My Orders</h1>
+    </div>
+
+    <!-- Login Gate — shown until the customer is authenticated -->
+    <div id="login-gate" class="login-gate-wrap" style="display:none">
+      <div class="login-gate-card">
+        <div class="login-gate-title">Sign in to view your orders</div>
+        <p class="login-gate-sub">
+          Sign in with the same phone number or Google account you used to check out.
+        </p>
+
+        <div id="login-alert"></div>
+
+        <a href="/api/customer-auth/google?next=%2Fmy-orders" class="btn btn-outline btn-block btn-lg btn-google">
+          <svg width="18" height="18" viewBox="0 0 48 48" style="flex-shrink:0">
+            <path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"/>
+            <path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/>
+            <path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"/>
+            <path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571c0.001-0.001,0.002-0.001,0.003-0.002l6.19,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z"/>
+          </svg>
+          Sign in with Google
+        </a>
+
+        <div class="auth-divider"><span>or</span></div>
+
+        <!-- Mobile OTP: phone entry step -->
+        <div id="otp-phone-step">
+          <div class="form-group" style="margin-bottom:14px">
+            <label class="form-label">Mobile Number</label>
+            <div class="phone-wrap">
+              <div class="phone-prefix">🇮🇳 +91</div>
+              <input class="form-control" id="login_phone"
+                placeholder="10-digit mobile number"
+                maxlength="10"
+                inputmode="numeric"
+                autocomplete="tel-national">
+            </div>
+            <div class="form-error" id="err-login-phone"></div>
+          </div>
+
+          <div class="captcha-wrap" style="margin-bottom:14px">
+            <div id="turnstile-otp-widget"></div>
+            <div class="form-error" id="err-otp-turnstile" style="margin-top:8px;display:none"></div>
+          </div>
+
+          <button class="btn btn-dark btn-block btn-lg" id="send-otp-btn" onclick="sendOtp()">
+            Continue with mobile OTP
+          </button>
+        </div>
+
+        <!-- Mobile OTP: code verification step -->
+        <div id="otp-verify-step" style="display:none">
+          <p style="font-size:0.82rem;color:var(--muted);margin-bottom:16px;line-height:1.6">
+            Enter the 6-digit code sent to <strong id="otp-sent-phone"></strong>.
+            <button type="button" class="link-btn" onclick="editPhone()">Change number</button>
+          </p>
+          <div class="form-group">
+            <label class="form-label">OTP Code</label>
+            <input class="form-control" id="login_otp"
+              placeholder="6-digit code"
+              maxlength="6"
+              inputmode="numeric"
+              autocomplete="one-time-code">
+            <div class="form-error" id="err-otp"></div>
+          </div>
+          <button class="btn btn-dark btn-block btn-lg" id="verify-otp-btn" onclick="verifyOtp()">
+            Verify & Continue
+          </button>
+          <p style="text-align:center;margin-top:14px;font-size:0.78rem;color:var(--muted-2)">
+            <button type="button" class="link-btn" id="resend-otp-btn" onclick="resendOtp()" disabled>
+              Resend OTP in <span id="resend-timer">30</span>s
+            </button>
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Orders — shown only once the customer is signed in -->
+    <div class="orders-wrap" id="orders-wrap" style="display:none">
+      <div class="customer-status-bar" id="customer-status-bar" style="display:none">
+        <span id="customer-status-label"></span>
+        <button type="button" class="link-btn" onclick="logoutCustomer()">Log out</button>
+      </div>
+      <div id="orders-list"></div>
+    </div>
+
+  </div>
+
+  <script src="/static/js/shared.js"></script>
+  <script>
+    let currentCustomer = null;
+    let turnstileOtpWidgetId = null;
+    let turnstileOtpToken = "";
+    let resendInterval = null;
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Init — same "login gate genuinely blocks everything" pattern as
+    // checkout.html: the order list only ever renders after GET
+    // /api/customer-auth/me confirms a session, and GET /api/orders/mine
+    // itself is scoped server-side to that session's user_id regardless.
+    // ═══════════════════════════════════════════════════════════════════
+    async function initMyOrdersPage() {
+      handleAuthRedirectParams();
+      await refreshAuthState();
+    }
+
+    function handleAuthRedirectParams() {
+      const params = new URLSearchParams(window.location.search);
+      let touched = false;
+
+      if (params.get("login") === "success") {
+        showToast("Signed in with Google", "success");
+        touched = true;
+      }
+      const loginError = params.get("login_error");
+      if (loginError) {
+        showToast(loginErrorMessage(loginError), "error");
+        touched = true;
+      }
+
+      if (touched) {
+        params.delete("login");
+        params.delete("login_error");
+        const qs = params.toString();
+        window.history.replaceState({}, "", window.location.pathname + (qs ? "?" + qs : ""));
+      }
+    }
+
+    function loginErrorMessage(code) {
+      const messages = {
+        google_cancelled: "Google sign-in was cancelled.",
+        invalid_callback: "Sign-in failed. Please try again.",
+        state_invalid: "Sign-in session expired. Please try again.",
+        token_exchange_failed: "Google sign-in failed. Please try again.",
+        token_verification_failed: "Google sign-in failed. Please try again.",
+        no_google_id: "Google sign-in failed. Please try again.",
+        db_error: "Something went wrong. Please try again.",
+      };
+      return messages[code] || "Sign-in failed. Please try again.";
+    }
+
+    // ─── Auth state ─────────────────────────────────────────────────────
+    async function refreshAuthState() {
+      let session;
+      try {
+        session = await apiFetch("/api/customer-auth/me");
+      } catch (e) {
+        session = { logged_in: false, customer: null };
+      }
+
+      if (session.logged_in) {
+        currentCustomer = session.customer;
+        showOrders();
+      } else {
+        currentCustomer = null;
+        showLoginGate();
+      }
+    }
+
+    function showLoginGate() {
+      document.getElementById("login-gate").style.display = "flex";
+      document.getElementById("orders-wrap").style.display = "none";
+      renderOtpTurnstile();
+    }
+
+    function showOrders() {
+      document.getElementById("login-gate").style.display = "none";
+      document.getElementById("orders-wrap").style.display = "block";
+      renderCustomerStatusBar();
+      loadOrders();
+    }
+
+    function renderCustomerStatusBar() {
+      const bar = document.getElementById("customer-status-bar");
+      if (!currentCustomer) { bar.style.display = "none"; return; }
+      const label = currentCustomer.phone
+        ? `Signed in as +91 ${currentCustomer.phone}`
+        : `Signed in as ${currentCustomer.email || "your account"}`;
+      document.getElementById("customer-status-label").textContent = label;
+      bar.style.display = "flex";
+    }
+
+    async function logoutCustomer() {
+      try { await apiFetch("/api/customer-auth/logout", { method: "POST" }); } catch (e) {}
+      window.location.reload();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Turnstile — gates OTP send, same explicit-render pattern as
+    // checkout.html (a widget inside display:none never renders early).
+    // ═══════════════════════════════════════════════════════════════════
+    const TURNSTILE_SITEKEY = "0x4AAAAAADrUAQmH1f5HqXtJ";
+
+    function renderOtpTurnstile() {
+      if (turnstileOtpWidgetId !== null) return;
+      if (!window.turnstile) { setTimeout(renderOtpTurnstile, 200); return; }
+      turnstileOtpWidgetId = window.turnstile.render("#turnstile-otp-widget", {
+        sitekey: TURNSTILE_SITEKEY,
+        callback: (token) => {
+          turnstileOtpToken = token || "";
+          document.getElementById("err-otp-turnstile").style.display = "none";
+        },
+        "error-callback": () => { turnstileOtpToken = ""; showOtpTurnstileError(); },
+        "expired-callback": () => { turnstileOtpToken = ""; showOtpTurnstileError("Verification expired — please try again"); },
+        "timeout-callback": () => { turnstileOtpToken = ""; showOtpTurnstileError("Verification expired — please try again"); },
+      });
+    }
+
+    function showOtpTurnstileError(msg) {
+      const el = document.getElementById("err-otp-turnstile");
+      el.textContent = msg || "Please complete the human verification above";
+      el.style.display = "block";
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Mobile OTP login (identical flow to checkout.html)
+    // ═══════════════════════════════════════════════════════════════════
+    async function sendOtp() {
+      const phone = document.getElementById("login_phone").value.trim();
+      document.getElementById("login_phone").classList.remove("error");
+      document.getElementById("err-login-phone").textContent = "";
+
+      if (!/^[6-9]\d{9}$/.test(phone)) {
+        document.getElementById("login_phone").classList.add("error");
+        document.getElementById("err-login-phone").textContent = "Enter a valid 10-digit Indian mobile number";
+        return;
+      }
+      if (!turnstileOtpToken) {
+        showOtpTurnstileError();
+        return;
+      }
+
+      const btn = document.getElementById("send-otp-btn");
+      btn.disabled = true;
+      btn.textContent = "Sending OTP…";
+
+      try {
+        await apiFetch("/api/customer-auth/otp/send", {
+          method: "POST",
+          body: JSON.stringify({ phone, captcha_token: turnstileOtpToken })
+        });
+
+        document.getElementById("otp-sent-phone").textContent = "+91 " + phone;
+        document.getElementById("otp-phone-step").style.display = "none";
+        document.getElementById("otp-verify-step").style.display = "block";
+        document.getElementById("login_otp").value = "";
+        startResendTimer();
+        showToast("OTP sent", "success");
+      } catch (e) {
+        showToast(e.message || "Could not send OTP", "error");
+      } finally {
+        turnstileOtpToken = "";
+        if (window.turnstile && turnstileOtpWidgetId !== null) {
+          try { window.turnstile.reset(turnstileOtpWidgetId); } catch (err) {}
+        }
+        btn.disabled = false;
+        btn.textContent = "Continue with mobile OTP";
+      }
+    }
+
+    function startResendTimer() {
+      let seconds = 30;
+      const btn = document.getElementById("resend-otp-btn");
+      btn.disabled = true;
+      btn.innerHTML = `Resend OTP in <span id="resend-timer">${seconds}</span>s`;
+      clearInterval(resendInterval);
+      resendInterval = setInterval(() => {
+        seconds -= 1;
+        if (seconds <= 0) {
+          clearInterval(resendInterval);
+          btn.disabled = false;
+          btn.textContent = "Resend OTP";
+        } else {
+          const span = document.getElementById("resend-timer");
+          if (span) span.textContent = seconds;
+        }
+      }, 1000);
+    }
+
+    function editPhone() {
+      clearInterval(resendInterval);
+      document.getElementById("otp-verify-step").style.display = "none";
+      document.getElementById("otp-phone-step").style.display = "block";
+    }
+
+    function resendOtp() {
+      editPhone();
+    }
+
+    async function verifyOtp() {
+      const phone = document.getElementById("login_phone").value.trim();
+      const otp = document.getElementById("login_otp").value.trim();
+      document.getElementById("login_otp").classList.remove("error");
+      document.getElementById("err-otp").textContent = "";
+
+      if (!/^\d{4,8}$/.test(otp)) {
+        document.getElementById("login_otp").classList.add("error");
+        document.getElementById("err-otp").textContent = "Enter the code sent to your phone";
+        return;
+      }
+
+      const btn = document.getElementById("verify-otp-btn");
+      btn.disabled = true;
+      btn.textContent = "Verifying…";
+
+      try {
+        await apiFetch("/api/customer-auth/otp/verify", {
+          method: "POST",
+          body: JSON.stringify({ phone, otp })
+        });
+        clearInterval(resendInterval);
+        showToast("Signed in!", "success");
+        await refreshAuthState();
+      } catch (e) {
+        document.getElementById("login_otp").classList.add("error");
+        document.getElementById("err-otp").textContent = e.message || "Incorrect OTP";
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Verify & Continue";
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Order history — GET /api/orders/mine is scoped server-side to
+    // customer["sub"] (the logged-in session), so this can never show
+    // another customer's orders regardless of what runs client-side here.
+    // ═══════════════════════════════════════════════════════════════════
+    async function loadOrders() {
+      const list = document.getElementById("orders-list");
+      list.innerHTML = `
+        <div class="skeleton orders-skeleton"></div>
+        <div class="skeleton orders-skeleton"></div>
+        <div class="skeleton orders-skeleton"></div>`;
+
+      try {
+        const data = await apiFetch("/api/orders/mine");
+        const orders = data.orders || [];
+
+        if (!orders.length) {
+          list.innerHTML = `
+            <div class="empty-orders">
+              <div class="section-eyebrow" style="margin-bottom:12px">Nothing here yet</div>
+              <h2 class="section-title" style="margin-bottom:24px">No orders yet</h2>
+              <a href="/products" class="btn btn-primary btn-lg">Browse Products</a>
+            </div>`;
+          return;
+        }
+
+        list.innerHTML = orders.map(renderOrderCard).join("");
+      } catch (e) {
+        list.innerHTML = `
+          <div class="empty-orders">
+            <h2 class="section-title" style="margin-bottom:12px">Couldn't load your orders</h2>
+            <p style="color:var(--muted);margin-bottom:24px">${e.message || "Please try again."}</p>
+            <button class="btn btn-outline btn-lg" onclick="loadOrders()">Retry</button>
+          </div>`;
+      }
+    }
+
+    // Maps what's already stored on the order (status + NimbusPost fields
+    // written at shipment-creation time) to a customer-friendly label —
+    // no live courier API call, per the stored-data-only scope for this page.
+    function shipmentStatus(o) {
+      switch (o.status) {
+        case "cancelled": return { label: "Cancelled", badge: "badge-danger" };
+        case "delivered": return { label: "Delivered", badge: "badge-success" };
+        case "shipped":   return { label: "In Transit", badge: "badge-gold" };
+        case "confirmed": return { label: o.nimbuspost_awb ? "Pending Pickup" : "Preparing to Ship", badge: "badge-muted" };
+        case "pending":
+        default:          return { label: "Order Received", badge: "badge-muted" };
+      }
+    }
+
+    function renderOrderCard(o) {
+      const ship = shipmentStatus(o);
+      const total = (o.our_price || 0) + (o.delivery_fee || 0);
+      const paymentLabel = (o.payment_type || "—").toUpperCase();
+      const paymentStatusOk = o.payment_status === "verified" || o.payment_status === "received";
+
+      const trackingLine = (o.status === "shipped" || o.status === "delivered") && o.tracking_id
+        ? `<div class="order-tracking-line">
+             ${o.courier_name ? o.courier_name + " · " : ""}AWB ${o.tracking_id}
+             <a href="https://www.nimbuspost.com/track/${encodeURIComponent(o.tracking_id)}" target="_blank" rel="noopener">Track Shipment</a>
+           </div>`
+        : "";
+
+      return `
+        <div class="order-card">
+          <div class="order-card-top">
+            <span class="order-card-date">${new Date(o.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</span>
+            <span class="badge ${ship.badge}">${ship.label}</span>
+          </div>
+          <div class="order-item">
+            <img class="order-item-img" src="${o.product_image || '/static/images/placeholder.svg'}" alt="">
+            <div class="order-item-info">
+              <div class="order-item-name">${o.product_name}</div>
+              <div class="order-item-meta">${o.size} · ${o.color}</div>
+            </div>
+            <div class="order-item-price">${formatPrice(total)}</div>
+          </div>
+          <div class="order-card-bottom">
+            <span class="order-payment-line">
+              ${paymentLabel} · <span class="badge ${paymentStatusOk ? 'badge-success' : 'badge-muted'}">${o.payment_status}</span>
+            </span>
+          </div>
+          ${trackingLine}
+        </div>`;
+    }
+
+    initMyOrdersPage();
+  </script>
+</body>
+</html>

@@ -57,9 +57,9 @@ GOOGLE_CLIENT_ID     = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 GOOGLE_REDIRECT_URI  = os.getenv(
     "GOOGLE_REDIRECT_URI",
-    "http://localhost:8000/api/customer-auth/google/callback"
+    "https://www.clovical.in/api/customer-auth/google/callback"
 )
-BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
+BASE_URL = os.getenv("BASE_URL", "https://www.clovical.in")
 
 _OTP_TTL          = 300     # 5 minutes
 _OTP_MAX_ATTEMPTS = 3       # wrong guesses before OTP is invalidated
@@ -297,6 +297,13 @@ async def google_callback(
             next_url = json.loads(stored).get("next", "/checkout")
         except Exception:
             pass
+        # Open-redirect guard: next_url round-trips through Redis un-
+        # validated from the original ?next= query param, so restrict it
+        # to a same-origin relative path before ever using it in a
+        # redirect (a bare "/x" is fine; "//evil.com" or "https://evil.com"
+        # is not — browsers treat "//" as protocol-relative).
+        if not next_url.startswith("/") or next_url.startswith("//"):
+            next_url = "/checkout"
         await redis_client.delete(f"google_state:{state}")
     else:
         logger.warning("Redis unavailable — Google OAuth state check skipped (non-production safe)")
@@ -325,7 +332,13 @@ async def google_callback(
         return RedirectResponse("/checkout?login_error=db_error")
 
     token    = create_customer_token(customer["id"], customer.get("phone"), customer.get("email"))
-    response = RedirectResponse(f"/checkout?login=success")
+    # Pre-existing bug fix: next_url was computed above from the stored
+    # OAuth state but never actually used — this always redirected to
+    # /checkout regardless of where the sign-in was initiated from. Needed
+    # so Google sign-in from /my-orders (next=%2Fmy-orders) lands back on
+    # /my-orders instead of /checkout. Error-path redirects above are left
+    # as /checkout unchanged — out of scope here.
+    response = RedirectResponse(f"{next_url}?login=success")
     _set_customer_cookie(response, token)
     logger.info(f"Customer Google login: id={customer['id']} email={email}")
     return response

@@ -13,11 +13,6 @@ from slowapi.util import get_remote_address
 from utils.db import supabase_admin, run_query, run_blocking
 from utils.auth_utils import require_admin, require_shopkeeper, require_customer
 from utils.captcha import verify_turnstile
-from utils.whatsapp_utils import (
-    send_text, send_image_url, send_upi_qr,
-    msg_order_received, msg_shipped, msg_refund_processed,
-    msg_payment_confirmed, msg_cod_confirmed, msg_track_delivered,
-)
 from utils.nimbuspost import create_shipment
 from utils.label_generator import build_shopkeeper_package_pdf
 from utils.cache import cache_get, cache_set, cache_delete, two_layer_get, two_layer_set, mem_clear_pattern, cache_clear_pattern
@@ -103,10 +98,13 @@ async def _mark_package_pdf_status(order_id: str, status: str):
     """
     Records the shopkeeper package PDF's state on the order. `status` is one
     of:
-      'ready'  — PDF built and stored, waiting for the shopkeeper to request it
-      'sent'   — delivered to the shopkeeper over WhatsApp
-      'failed' — PDF generation itself failed (not a send failure — we no
-                 longer send automatically, see _generate_shopkeeper_package_pdf)
+      'ready'  — PDF built and stored; downloadable from the admin/shopkeeper
+                 panel via GET .../package-pdf below
+      'failed' — PDF generation itself failed
+    ('sent' was a legacy value written only by the old WhatsApp pull webhook,
+    which has been removed — nothing sets it any more. Older rows may still
+    carry it, and 'ready'-only handling elsewhere treats that the same as
+    any other non-'ready' state.)
     This is what lets admins see (and manually regenerate) orders where the
     PDF never got built, instead of that failure only existing in a log line.
     """
@@ -122,20 +120,20 @@ async def _generate_shopkeeper_package_pdf(order: dict, shopkeeper: dict, nimbus
     """
     Builds the 2-page shopkeeper PDF (product photo + either NimbusPost's
     untouched label or our own fallback slip) and STORES it on the order —
-    it does NOT send it over WhatsApp.
+    it does NOT send it anywhere.
 
     Why: this used to push the PDF to the shopkeeper's WhatsApp the instant
     an order was confirmed/shipped. That's a business-initiated message the
     shopkeeper never asked for in that moment, and doing it automatically on
     every single order is exactly the pattern WhatsApp's spam heuristics
     flag — which is what got the number temporarily restricted. Automatic
-    pushes are gone for good now.
+    pushes are gone for good now, and so is WhatsApp as a delivery channel
+    entirely.
 
     Instead, the PDF sits here (base64, package_pdf_status='ready') until
-    the shopkeeper's own registered WhatsApp number messages the bot asking
-    for their orders. That delivery — a reply to an incoming message, not a
-    cold push — is handled by handle_shopkeeper_order_pull() in
-    routers/whatsapp.py, and is the ONLY place a package PDF is ever sent.
+    the admin or shopkeeper downloads it — see GET .../package-pdf on both
+    the admin and shopkeeper routes below, the only places this base64 is
+    ever read back out.
 
     Never raises — a PDF-generation failure must never block order/shipment
     processing. Building (reportlab/pypdf + an image fetch) is blocking
@@ -231,8 +229,9 @@ async def _release_shipment_claim(order_id: str, status: str = "failed"):
 async def create_shipment_for_order(order: dict) -> dict | None:
     """
     Fetches the order's shopkeeper and calls NimbusPost to create a
-    shipment, then persists the returned AWB/courier/label on the order
-    and notifies the customer via WhatsApp.
+    shipment, then persists the returned AWB/courier/label on the order and
+    builds the shopkeeper's package PDF (product photo + NimbusPost's
+    official label) for download from the admin/shopkeeper panel.
 
     Shared between the auto-ship flow here and the manual "Create Shipment"
     admin endpoint in routers/admin.py. Returns the NimbusPost result dict
@@ -262,7 +261,7 @@ async def create_shipment_for_order(order: dict) -> dict | None:
             await _release_shipment_claim(order_id, "failed")
             # No NimbusPost label possible without an address — build the
             # fallback package PDF instead, so the shopkeeper still has the
-            # photo + order details ready to pull whenever they ask for it.
+            # photo + order details ready to download whenever they need it.
             # Fire-and-forget so a slow image fetch doesn't hold up the caller.
             if shopkeeper:
                 _fire_and_forget(
@@ -294,22 +293,15 @@ async def create_shipment_for_order(order: dict) -> dict | None:
 
         logger.info(f"NimbusPost shipment created for order {order_id}: AWB {result['awb']}")
 
-        # From here on, everything is notification/best-effort work that
+        # From here on, everything is best-effort background work that
         # shouldn't hold up the caller (the admin's "Ship" click, or the
         # auto-ship trigger) now that the shipment itself is confirmed
         # created. Runs in the background; failures are logged, not raised.
-        tracking_url = f"https://www.nimbuspost.com/track/{result['awb']}"
-
-        async def _notify_and_send_package_pdf():
-            await run_blocking(
-                send_text, order["customer_phone"],
-                msg_shipped(order["product_name"], result["courier_name"] or "Courier", result["awb"], tracking_url)
-            )
-
+        async def _build_package_pdf_after_ship():
             # Fetch NimbusPost's own official label and merge it (untouched —
             # never edited, so the barcode/AWB stays valid) with our product
             # photo page, then build+store the combined PDF for the
-            # shopkeeper to pull later — not send it now.
+            # admin/shopkeeper to download later — not send it anywhere.
             label_bytes = None
             if result.get("label_url"):
                 try:
@@ -320,7 +312,7 @@ async def create_shipment_for_order(order: dict) -> dict | None:
                     logger.warning(f"Could not fetch NimbusPost label PDF for order {order_id}: {e}")
             await _generate_shopkeeper_package_pdf(order, shopkeeper, label_bytes)
 
-        _fire_and_forget(_notify_and_send_package_pdf(), f"post-shipment notifications for order {order_id}")
+        _fire_and_forget(_build_package_pdf_after_ship(), f"package PDF build for order {order_id}")
 
         return result
     except Exception as e:
@@ -510,10 +502,11 @@ async def create_order(order: OrderRequest, request: Request, customer=Depends(r
     # response (COD) or the Cashfree Checkout flow (below). The old
     # admin_notification / whatsapp_message / admin_phone WhatsApp-deep-link
     # payload that used to send the customer to WhatsApp to "place" the
-    # order has been removed. WhatsApp itself is untouched elsewhere: the
-    # bot/webhook in routers/whatsapp.py still exists for shopkeeper package
-    # PDF pulls, and admin-side customer notifications (order confirmed,
-    # shipped, delivered, etc.) still fire from update_order() below.
+    # order has been removed. WhatsApp has since been removed from the app
+    # entirely — there is no longer any WhatsApp bot/webhook, and no
+    # customer-facing WhatsApp notifications fire from update_order() below;
+    # the shopkeeper's package PDF is generated and stored for download from
+    # the admin/shopkeeper panel instead (see _generate_shopkeeper_package_pdf).
     if order.payment_method == "cod":
         return {
             "success": True,
@@ -567,22 +560,32 @@ async def create_order(order: OrderRequest, request: Request, customer=Depends(r
 @router.get("/mine")
 async def my_orders(checkout_group_id: str | None = None, customer=Depends(require_customer)):
     """
-    Minimal, read-only order lookup for the logged-in customer — built for
-    the post-Cashfree confirmation page's order summary, not a full order
-    history view (that's still out of scope). Always scoped to the
-    requesting customer's own user_id; checkout_group_id further narrows
-    to a single checkout when provided.
+    Read-only order lookup for the logged-in customer. Originally built
+    narrow (for the post-Cashfree confirmation page's order summary), now
+    also backs the full "My Orders" history page — same query, same
+    ownership scoping, just more fields (shipment/tracking status) and a
+    higher limit. Always scoped to the requesting customer's own user_id;
+    checkout_group_id further narrows to a single checkout when provided
+    (used by the confirmation page — the history page omits it to get
+    everything).
+
+    Shipment status here is whatever NimbusPost last told us at shipment-
+    creation time (courier_name/tracking_id/shipping_status/nimbuspost_awb),
+    not a live courier lookup — live tracking is a separate, admin-only call
+    (see /admin/orders/{id}/track in routers/admin.py) that would need its
+    own customer-safe wrapper to expose here; out of scope for now.
     """
     try:
         query = (
             supabase_admin.table("orders")
             .select("id,product_name,product_image,size,color,our_price,delivery_fee,"
-                    "payment_type,payment_status,status,checkout_group_id,created_at")
+                    "payment_type,payment_status,status,checkout_group_id,created_at,"
+                    "courier_name,tracking_id,shipping_status,nimbuspost_awb")
             .eq("user_id", customer["sub"])
         )
         if checkout_group_id:
             query = query.eq("checkout_group_id", checkout_group_id)
-        res = await run_query(query.order("created_at", desc=True).limit(50))
+        res = await run_query(query.order("created_at", desc=True).limit(200))
     except Exception as e:
         logger.error(f"Failed to fetch orders for customer {customer['sub']}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch orders")
@@ -606,6 +609,36 @@ async def admin_list_orders(
     except Exception as e:
         logger.error(f"Admin: list orders failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch orders")
+
+
+@router.get("/admin/{order_id}/package-pdf")
+async def admin_package_pdf(order_id: str, admin=Depends(require_admin)):
+    """
+    Admin-side equivalent of GET /shopkeeper/{order_id}/package-pdf below —
+    same stored PDF, no shopkeeper_id ownership filter since admins can see
+    every order.
+    """
+    try:
+        res = await run_query(
+            supabase_admin.table("orders")
+            .select("id,package_pdf_status,package_pdf_base64,package_pdf_filename")
+            .eq("id", order_id).single()
+        )
+        order = res.data
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        if order.get("package_pdf_status") != "ready" or not order.get("package_pdf_base64"):
+            raise HTTPException(status_code=404, detail="Package PDF is not ready for this order yet")
+
+        return {
+            "filename": order.get("package_pdf_filename") or f"order_{order_id[:8]}.pdf",
+            "content_base64": order["package_pdf_base64"],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Admin package PDF fetch failed for order {order_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch order data")
 
 
 @router.put("/admin/{order_id}")
@@ -635,29 +668,13 @@ async def update_order(order_id: str, update: StatusUpdate, admin=Depends(requir
         await cache_delete("analytics:overview")
         await cache_delete("orders:recent")
 
-        # WhatsApp notifications on status change
-        phone = order["customer_phone"]
-
-        if update.status == "shipped" and update.tracking_id:
-            courier = update.courier_name or "Courier"
-            tracking_url = f"https://www.delhivery.com/track/package/{update.tracking_id}"
-            await run_blocking(send_text, phone, msg_shipped(order["product_name"], courier, update.tracking_id, tracking_url))
-
-        delivery_fee = order.get("delivery_fee") or 0
-        total_amount = order.get("total_amount") or (order["our_price"] + delivery_fee)
-
         payment_type = order.get("payment_type")
 
         if update.status == "confirmed" and payment_type == "upi" and update.payment_status == "verified":
-            await run_blocking(
-                send_text, phone,
-                msg_payment_confirmed(order["product_name"], order["size"], order["color"], total_amount, delivery_fee)
-            )
-
             # Build the shopkeeper's package PDF (product photo + either
             # NimbusPost's label or our fallback slip) and store it, ready
-            # for the shopkeeper to pull — never sent automatically. If
-            # auto-ship is on, create_shipment_for_order() below generates
+            # for the admin/shopkeeper to download — never sent automatically.
+            # If auto-ship is on, create_shipment_for_order() below generates
             # it exactly once from there instead — doing it here too would
             # duplicate it. If auto-ship is off, no shipment will ever be
             # attempted automatically, so generate the fallback version now.
@@ -679,18 +696,9 @@ async def update_order(order_id: str, update: StatusUpdate, admin=Depends(requir
                 except Exception as e:
                     logger.warning(f"Shopkeeper package PDF failed for order {order_id}: {e}")
 
-        # COD orders are never auto-confirmed by the WhatsApp bot (see
-        # routers/whatsapp.py) — they sit in "pending" until an admin
-        # confirms them here. That confirmation is what should fire the
-        # "Order Confirmed (COD)" message; previously this branch only
-        # matched payment_type == "upi", so COD customers never got a
-        # confirmation message at all.
+        # COD orders are never auto-confirmed — they sit in "pending" until
+        # an admin confirms them here.
         if update.status == "confirmed" and payment_type == "cod" and order.get("status") != "confirmed":
-            await run_blocking(
-                send_text, phone,
-                msg_cod_confirmed(order["product_name"], order["size"], order["color"], total_amount, delivery_fee)
-            )
-
             # Same as the UPI branch above: build the shopkeeper's package PDF
             # now if auto-ship won't do it later. Previously this was missing
             # entirely for COD, so COD orders never got a package PDF unless
@@ -712,14 +720,6 @@ async def update_order(order_id: str, update: StatusUpdate, admin=Depends(requir
                         logger.warning(f"Order {order_id} has no shopkeeper_id — skipping package PDF")
                 except Exception as e:
                     logger.warning(f"Shopkeeper package PDF failed for order {order_id}: {e}")
-
-        # Delivered status had no WhatsApp trigger at all — admins marking an
-        # order "delivered" produced no customer-facing message.
-        if update.status == "delivered" and order.get("status") != "delivered":
-            await run_blocking(send_text, phone, msg_track_delivered())
-
-        if update.refund_status == "processed":
-            await run_blocking(send_text, phone, msg_refund_processed(total_amount))
 
         # NimbusPost auto-ship: only fires when payment is verified on a
         # confirmed order and the auto-mode setting is turned on. In manual
@@ -767,7 +767,7 @@ async def shopkeeper_list_orders(status: str | None = None, shopkeeper=Depends(r
     try:
         q = (
             supabase_admin.table("orders")
-            .select("id,product_name,product_image,size,color,shopkeeper_price,payment_type,payment_status,status,tracking_id,courier_name,created_at")
+            .select("id,product_name,product_image,size,color,shopkeeper_price,payment_type,payment_status,status,tracking_id,courier_name,package_pdf_status,created_at")
             .eq("shopkeeper_id", shopkeeper["shopkeeper_id"])
             .order("created_at", desc=True)
         )
@@ -849,4 +849,38 @@ async def shopkeeper_order_pdf_data(order_id: str, shopkeeper=Depends(require_sh
         raise
     except Exception as e:
         logger.error(f"Shopkeeper PDF data fetch failed for order {order_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch PDF data")
+
+
+@router.get("/shopkeeper/{order_id}/package-pdf")
+async def shopkeeper_package_pdf(order_id: str, shopkeeper=Depends(require_shopkeeper)):
+    """
+    Downloads the stored package PDF (product photo + NimbusPost's official
+    label, built by _generate_shopkeeper_package_pdf) for one of this
+    shopkeeper's own orders. This is the replacement for the old WhatsApp
+    pull — the only way this PDF ever reaches anyone now.
+
+    Ownership: scoped by .eq(shopkeeper_id) same as every other shopkeeper
+    endpoint here — a shopkeeper can never fetch another shopkeeper's PDF.
+    """
+    try:
+        res = await run_query(
+            supabase_admin.table("orders")
+            .select("id,package_pdf_status,package_pdf_base64,package_pdf_filename")
+            .eq("id", order_id).eq("shopkeeper_id", shopkeeper["shopkeeper_id"]).single()
+        )
+        order = res.data
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        if order.get("package_pdf_status") != "ready" or not order.get("package_pdf_base64"):
+            raise HTTPException(status_code=404, detail="Package PDF is not ready for this order yet")
+
+        return {
+            "filename": order.get("package_pdf_filename") or f"order_{order_id[:8]}.pdf",
+            "content_base64": order["package_pdf_base64"],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Shopkeeper package PDF fetch failed for order {order_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch order data")
