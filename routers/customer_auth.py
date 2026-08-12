@@ -57,9 +57,9 @@ GOOGLE_CLIENT_ID     = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 GOOGLE_REDIRECT_URI  = os.getenv(
     "GOOGLE_REDIRECT_URI",
-    "https://www.clovical.in/api/customer-auth/google/callback"
+    "http://localhost:8000/api/customer-auth/google/callback"
 )
-BASE_URL = os.getenv("BASE_URL", "https://www.clovical.in")
+BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
 
 _OTP_TTL          = 300     # 5 minutes
 _OTP_MAX_ATTEMPTS = 3       # wrong guesses before OTP is invalidated
@@ -82,14 +82,21 @@ async def _upsert_customer_google(google_id: str, email: str, name: str) -> dict
     3. Neither → create new record.
     """
     # 1. Exact match on google_id
+    # NOTE: plain .limit(1) here, not .maybe_single() — the postgrest-py
+    # version pinned by supabase==2.4.6 has a bug where .maybe_single()
+    # throws APIError("Missing response") instead of returning None when
+    # zero rows match, which crashes every first-time signup (the exact
+    # case where no row exists yet). .limit(1) always gets a normal array
+    # response regardless of row count, so it never hits that code path.
     res = await run_query(
         supabase_admin.table("customers")
         .select("*")
         .eq("google_id", google_id)
-        .maybe_single()
+        .limit(1)
     )
-    if res.data:
-        customer = res.data
+    row = res.data[0] if res.data else None
+    if row:
+        customer = row
         # Refresh name/email in case they changed in Google profile
         updates = {}
         if name and customer.get("name") != name:
@@ -104,15 +111,17 @@ async def _upsert_customer_google(google_id: str, email: str, name: str) -> dict
         return {**customer, **updates}
 
     # 2. Same email exists (OTP user) → merge
+    # Same .limit(1)-not-.maybe_single() fix as above.
     if email:
         res2 = await run_query(
             supabase_admin.table("customers")
             .select("*")
             .eq("email", email)
-            .maybe_single()
+            .limit(1)
         )
-        if res2.data:
-            customer = res2.data
+        row2 = res2.data[0] if res2.data else None
+        if row2:
+            customer = row2
             merge = {
                 "google_id": google_id,
                 "auth_provider": "both" if customer.get("phone") else "google",
@@ -142,14 +151,18 @@ async def _upsert_customer_phone(phone: str) -> dict:
     If a Google-authenticated customer already has this phone number (rare,
     since we don't collect phone from Google), merge it. Otherwise upsert on phone.
     """
+    # Same .limit(1)-not-.maybe_single() fix as _upsert_customer_google
+    # above — this is the OTP-login equivalent of that same bug, and
+    # crashes every brand-new customer's first OTP sign-in the same way.
     res = await run_query(
         supabase_admin.table("customers")
         .select("*")
         .eq("phone", phone)
-        .maybe_single()
+        .limit(1)
     )
-    if res.data:
-        customer = res.data
+    row = res.data[0] if res.data else None
+    if row:
+        customer = row
         # Ensure auth_provider reflects phone login
         if customer.get("auth_provider") == "google":
             await run_query(
