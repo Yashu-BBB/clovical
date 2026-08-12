@@ -46,6 +46,18 @@ async def order_confirmation(request: Request):
 async def my_orders_page(request: Request):
     return render("customer/my_orders.html", request)
 
+@router.get("/privacy-policy", response_class=HTMLResponse)
+async def privacy_policy_page(request: Request):
+    return render("customer/privacy_policy.html", request)
+
+@router.get("/terms-and-conditions", response_class=HTMLResponse)
+async def terms_and_conditions_page(request: Request):
+    return render("customer/terms_and_conditions.html", request)
+
+@router.get("/cookie-policy", response_class=HTMLResponse)
+async def cookie_policy_page(request: Request):
+    return render("customer/cookie_policy.html", request)
+
 
 # ─── Admin Pages ──────────────────────────────────────────────────────────
 
