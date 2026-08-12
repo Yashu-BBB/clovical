@@ -29,6 +29,15 @@ Design notes
     - OTP login     → upsert on phone. If same phone already in DB from a Google
       login, merge phone + auth_provider onto the existing record.
 • Never raises on OTP send failure — returns a user-friendly error instead.
+
+NOTE (temporary): MSG91 OTP verification/approval for our account was rejected,
+so the "Continue with mobile OTP" entry point has been hidden in
+templates/customer/checkout.html (login gate now shows Google only). This
+backend code and both OTP endpoints below are intentionally left ACTIVE and
+UNCHANGED — see the checkout.html comment for the reasoning and how to
+re-enable the frontend. Flagged to the team: if MSG91 access itself needs to
+be pulled (not just the UI entry point), that's a separate decision — this
+router was left reachable, not disabled, pending that call.
 """
 import os
 import re

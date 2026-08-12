@@ -521,9 +521,17 @@
           Sign in with Google
         </a>
 
+        <!--
+          TEMPORARILY DISABLED: Mobile OTP login (MSG91 verification/approval rejected).
+          To re-enable: delete this comment wrapper (the opening comment tag below and
+          its matching closing tag) so the "or" divider + OTP phone/verify steps render
+          again. Nothing inside has been deleted or altered — this is a pure UI hide.
+          Backend endpoints (/api/customer-auth/otp/send, /verify) are untouched.
+        -->
+        <!--
         <div class="auth-divider"><span>or</span></div>
 
-        <!-- Mobile OTP: phone entry step -->
+        <!-\- Mobile OTP: phone entry step -\->
         <div id="otp-phone-step">
           <div class="form-group" style="margin-bottom:14px">
             <label class="form-label">Mobile Number</label>
@@ -548,7 +556,7 @@
           </button>
         </div>
 
-        <!-- Mobile OTP: code verification step -->
+        <!-\- Mobile OTP: code verification step -\->
         <div id="otp-verify-step" style="display:none">
           <p style="font-size:0.82rem;color:var(--muted);margin-bottom:16px;line-height:1.6">
             Enter the 6-digit code sent to <strong id="otp-sent-phone"></strong>.
@@ -572,6 +580,7 @@
             </button>
           </p>
         </div>
+        -->
       </div>
     </div>
 
@@ -840,6 +849,10 @@
     const TURNSTILE_SITEKEY = "0x4AAAAAADrUAQmH1f5HqXtJ";
 
     function renderOtpTurnstile() {
+      // Mobile OTP login is temporarily disabled (see commented-out block in the
+      // login gate above) — its markup isn't in the DOM, so there's nothing to
+      // render a Turnstile widget into. Remove this guard when OTP is re-enabled.
+      if (!document.getElementById("turnstile-otp-widget")) return;
       if (turnstileOtpWidgetId !== null) return;
       if (!window.turnstile) { setTimeout(renderOtpTurnstile, 200); return; }
       turnstileOtpWidgetId = window.turnstile.render("#turnstile-otp-widget", {
