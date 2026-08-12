@@ -10,6 +10,7 @@ from utils.cache import (
     cache_get, cache_set, cache_clear_pattern,
     two_layer_get, two_layer_set, two_layer_clear_pattern, mem_clear_pattern,
 )
+from utils.notifications import notify_admins, notify_shopkeeper
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -146,7 +147,15 @@ async def submit_request(
         await two_layer_clear_pattern(f"requests:mine:{shopkeeper['shopkeeper_id']}")
         await cache_clear_pattern("requests:admin:*")
         logger.info(f"Product request submitted by shopkeeper {shopkeeper['shopkeeper_id']}: {name}")
-        return res.data[0]
+        new_request = res.data[0]
+        await notify_admins(
+            "new_request",
+            f"New product request — {name}",
+            f"Shopkeeper #{shopkeeper['shopkeeper_id']:03d} submitted '{name}' for review.",
+            link="/admin/requests",
+            request_id=new_request["id"],
+        )
+        return new_request
     except HTTPException:
         raise
     except Exception as e:
@@ -358,6 +367,15 @@ async def accept_request(request_id: str, admin=Depends(require_admin)):
         await two_layer_clear_pattern(f"requests:mine:{r['shopkeeper_id']}")
         await two_layer_clear_pattern(f"shopkeeper:products:{r['shopkeeper_id']}")
         logger.info(f"Request {request_id} accepted by admin {admin['sub']} → product {new_product['id']}")
+        await notify_shopkeeper(
+            r["shopkeeper_id"],
+            "request_accepted",
+            "Your request was accepted! 🎉",
+            f"'{r['name']}' has been approved and is now live on the store.",
+            link="/shopkeeper/products",
+            request_id=request_id,
+            product_id=new_product["id"],
+        )
         return {"success": True, "product": new_product}
     except HTTPException:
         raise
@@ -388,6 +406,13 @@ async def reject_request(request_id: str, admin=Depends(require_admin)):
         await cache_clear_pattern("requests:admin:*")
         await two_layer_clear_pattern(f"requests:mine:{r['shopkeeper_id']}")
         logger.info(f"Request {request_id} rejected & hard-deleted by admin {admin['sub']}")
+        await notify_shopkeeper(
+            r["shopkeeper_id"],
+            "request_rejected",
+            "Your request was rejected",
+            f"'{r['name']}' was not approved and has been removed from your requests.",
+            link="/shopkeeper/products",
+        )
         return {"success": True}
     except HTTPException:
         raise

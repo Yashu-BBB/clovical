@@ -8,6 +8,7 @@ from utils.cache import (
     two_layer_get, two_layer_set, two_layer_clear_pattern,
     cache_clear_pattern, mem_clear_pattern,
 )
+from utils.notifications import check_out_of_stock
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -112,12 +113,13 @@ async def update_my_stock(product_id: str, data: ShopkeeperStockUpdate, shopkeep
     a shopkeeper can never modify a product that isn't theirs."""
     try:
         owner_check = await run_query(
-            supabase_admin.table("products").select("id,shopkeeper_id").eq("id", product_id).single()
+            supabase_admin.table("products").select("id,name,shopkeeper_id,stock,size_stock,color_stock").eq("id", product_id).single()
         )
         if not owner_check.data:
             raise HTTPException(status_code=404, detail="Product not found")
         if owner_check.data.get("shopkeeper_id") != shopkeeper["shopkeeper_id"]:
             raise HTTPException(status_code=403, detail="You can only manage stock for your own products")
+        before_stock = owner_check.data
 
         updates = {}
         if data.stock is not None:
@@ -132,7 +134,13 @@ async def update_my_stock(product_id: str, data: ShopkeeperStockUpdate, shopkeep
         res = await run_query(supabase_admin.table("products").update(updates).eq("id", product_id))
         await _clear_shopkeeper_and_public_caches(shopkeeper["shopkeeper_id"])
         logger.info(f"Shopkeeper {shopkeeper['shopkeeper_id']} updated stock for product {product_id}: {updates}")
-        return res.data[0] if res.data else {}
+        updated = res.data[0] if res.data else {}
+        await check_out_of_stock(
+            product_id, before_stock.get("name") or "Product",
+            before_stock,
+            {"stock": updated.get("stock"), "size_stock": updated.get("size_stock"), "color_stock": updated.get("color_stock")},
+        )
+        return updated
     except HTTPException:
         raise
     except Exception as e:

@@ -230,6 +230,35 @@
       .order-card-bottom { flex-direction: column; align-items: flex-start; }
     }
   </style>
+
+  <style>
+    /* ─── Notification bell dropdown (customer theme: white surface) ──── */
+    .notif-dropdown {
+      display: none; position: absolute; top: 44px; right: 0; width: 320px; max-width: 82vw;
+      background: #fff; color: var(--off-white, #1a1a1a); border-radius: 12px;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.18); z-index: 200; overflow: hidden;
+      border: 1px solid var(--border, #eee);
+    }
+    .notif-dropdown.open { display: block; }
+    .notif-dropdown-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 14px; border-bottom: 1px solid var(--border, #eee); font-weight: 700; font-size: 0.85rem;
+    }
+    .notif-dropdown-header button {
+      background: none; border: none; color: var(--black, #0A0A0A); font-size: 0.74rem;
+      font-weight: 600; cursor: pointer; text-decoration: underline;
+    }
+    .notif-list { max-height: 380px; overflow-y: auto; }
+    .notif-empty { padding: 28px 14px; text-align: center; color: var(--muted, #888); font-size: 0.83rem; }
+    .notif-item { display: block; padding: 12px 14px; border-bottom: 1px solid #F2F2F2; cursor: pointer; transition: background .15s; }
+    .notif-item:last-child { border-bottom: none; }
+    .notif-item:hover { background: #FAFAFA; }
+    .notif-item.unread { background: #FAF8FF; }
+    .notif-item-title { font-size: 0.83rem; font-weight: 700; margin-bottom: 2px; }
+    .notif-item-msg { font-size: 0.76rem; color: var(--muted, #666); line-height: 1.4; }
+    .notif-item-time { font-size: 0.68rem; color: #B0B0B0; margin-top: 4px; }
+    .notif-unread-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:#E74C3C; margin-right:6px; vertical-align:middle; }
+  </style>
 </head>
 <body>
 
@@ -241,6 +270,19 @@
       <a href="/wishlist">Wishlist</a>
     </div>
     <div class="nav-actions">
+      <div class="notif-bell-wrap" style="position:relative">
+        <button class="nav-icon-btn" id="notif-bell-btn" onclick="toggleNotifDropdown(event)" title="Notifications">
+          <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          <span id="notif-badge" class="nav-badge" style="display:none">0</span>
+        </button>
+        <div class="notif-dropdown" id="notif-dropdown">
+          <div class="notif-dropdown-header">
+            <span>Notifications</span>
+            <button type="button" onclick="markAllNotifsRead(event)">Mark all read</button>
+          </div>
+          <div class="notif-list" id="notif-list"><div class="notif-empty">Loading...</div></div>
+        </div>
+      </div>
       <button class="nav-icon-btn" onclick="window.location='/my-orders'" title="My Orders">
         <svg viewBox="0 0 24 24"><path d="M20 7 12 3 4 7v10l8 4 8-4V7Z"/><path d="M4 7l8 4 8-4"/><path d="M12 11v10"/></svg>
       </button>
@@ -429,7 +471,98 @@
       document.getElementById("orders-wrap").style.display = "block";
       renderCustomerStatusBar();
       loadOrders();
+      initNotifBell();
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Notification bell — order created/confirmed/shipped/delivered.
+    // Only starts polling once we know the customer is signed in (a signed-
+    // out visitor would just get 401s from every call below).
+    // ═══════════════════════════════════════════════════════════════════
+    let notifPollStarted = false;
+
+    function initNotifBell() {
+      if (notifPollStarted) return;
+      notifPollStarted = true;
+      refreshNotifBadge();
+      setInterval(refreshNotifBadge, 25000);
+    }
+
+    function notifTimeAgo(iso) {
+      const diffSec = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+      if (diffSec < 60) return 'just now';
+      if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+      if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+      return `${Math.floor(diffSec / 86400)}d ago`;
+    }
+
+    async function refreshNotifBadge() {
+      try {
+        const res = await fetch('/api/notifications/customer/unread-count', { credentials: 'same-origin' });
+        if (!res.ok) return;
+        const data = await res.json();
+        const badge = document.getElementById('notif-badge');
+        if (!badge) return;
+        if (data.count > 0) { badge.style.display = 'flex'; badge.textContent = data.count > 99 ? '99+' : data.count; }
+        else badge.style.display = 'none';
+      } catch (e) { /* silent */ }
+    }
+
+    async function loadNotifList() {
+      const list = document.getElementById('notif-list');
+      if (list) list.innerHTML = '<div class="notif-empty">Loading...</div>';
+      try {
+        const res = await fetch('/api/notifications/customer', { credentials: 'same-origin' });
+        if (!res.ok) throw new Error('failed');
+        const items = await res.json();
+        if (!list) return;
+        if (!items.length) { list.innerHTML = '<div class="notif-empty">No notifications yet.</div>'; return; }
+        list.innerHTML = items.map(n => `
+          <a class="notif-item ${n.is_read ? '' : 'unread'}" href="javascript:void(0)" onclick='openCustomerNotif(${JSON.stringify(n.id)}, ${JSON.stringify(n.link || "")})'>
+            <div class="notif-item-title">${!n.is_read ? '<span class="notif-unread-dot"></span>' : ''}${escapeHtmlNotif(n.title)}</div>
+            ${n.message ? `<div class="notif-item-msg">${escapeHtmlNotif(n.message)}</div>` : ''}
+            <div class="notif-item-time">${notifTimeAgo(n.created_at)}</div>
+          </a>
+        `).join('');
+      } catch (e) {
+        if (list) list.innerHTML = '<div class="notif-empty">Could not load notifications.</div>';
+      }
+    }
+
+    function escapeHtmlNotif(str) {
+      return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    async function openCustomerNotif(id, link) {
+      try { await fetch(`/api/notifications/customer/${id}/read`, { method: 'PUT', credentials: 'same-origin' }); } catch (e) {}
+      refreshNotifBadge();
+      if (link) window.location = link;
+      else loadNotifList();
+    }
+
+    async function markAllNotifsRead(e) {
+      if (e) e.stopPropagation();
+      try { await fetch('/api/notifications/customer/read-all', { method: 'PUT', credentials: 'same-origin' }); } catch (e) {}
+      refreshNotifBadge();
+      loadNotifList();
+    }
+
+    function toggleNotifDropdown(e) {
+      if (e) e.stopPropagation();
+      const dd = document.getElementById('notif-dropdown');
+      if (!dd) return;
+      const willOpen = !dd.classList.contains('open');
+      dd.classList.toggle('open', willOpen);
+      if (willOpen) loadNotifList();
+    }
+
+    document.addEventListener('click', (e) => {
+      const dd = document.getElementById('notif-dropdown');
+      const btn = document.getElementById('notif-bell-btn');
+      if (dd && dd.classList.contains('open') && !dd.contains(e.target) && !btn.contains(e.target)) {
+        dd.classList.remove('open');
+      }
+    });
 
     function renderCustomerStatusBar() {
       const bar = document.getElementById("customer-status-bar");

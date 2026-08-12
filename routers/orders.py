@@ -16,6 +16,8 @@ from utils.captcha import verify_turnstile
 from utils.nimbuspost import create_shipment
 from utils.label_generator import build_shopkeeper_package_pdf
 from utils.cache import cache_get, cache_set, cache_delete, two_layer_get, two_layer_set, mem_clear_pattern, cache_clear_pattern
+from utils.notifications import notify_admins, notify_shopkeeper, notify_customer, check_out_of_stock
+from utils.sms_utils import send_order_sms
 # Reused as-is for the Cashfree path below — create_order() must never
 # reimplement Cashfree order-creation/session logic itself (see routers/
 # payments.py docstring for why that file owns this end-to-end).
@@ -492,10 +494,64 @@ async def create_order(order: OrderRequest, request: Request, customer=Depends(r
         # stale "in stock" snapshot to the next visitor.
         mem_clear_pattern("product:")
         await cache_clear_pattern("products:*")
+
+        # Notify admins if this order just pushed the product (or the
+        # specific size/colour ordered) to zero — never on every order,
+        # only the one that actually crosses from >0 to 0.
+        _fire_and_forget(
+            check_out_of_stock(order.product_id, prod["name"], prod, stock_update),
+            f"out-of-stock check for {order.product_id}",
+        )
     except HTTPException:
         raise
     except Exception as e:
         logger.warning(f"Stock update failed for {order.product_id}: {e}", exc_info=True)
+
+    # ── Notifications: new order (admin), product ordered (shopkeeper),
+    #    order placed (customer). Fire-and-forget — never let a notification
+    #    failure affect the order response the customer is waiting on. ──
+    _fire_and_forget(
+        notify_admins(
+            "new_order",
+            f"New order — {prod['name']}",
+            f"{order.customer_name} ordered {prod['name']} ({order.size} / {order.color}), ₹{prod['our_price']}.",
+            link="/admin/orders",
+            order_id=new_order["id"],
+            product_id=order.product_id,
+        ),
+        f"admin new_order notification for {new_order['id']}",
+    )
+    _fire_and_forget(
+        notify_shopkeeper(
+            prod.get("shopkeeper_id"),
+            "product_ordered",
+            "Your product was ordered! 🎉",
+            f"{prod['name']} ({order.size} / {order.color}) was just ordered.",
+            link="/shopkeeper/orders",
+            order_id=new_order["id"],
+            product_id=order.product_id,
+        ),
+        f"shopkeeper product_ordered notification for {new_order['id']}",
+    )
+    _fire_and_forget(
+        notify_customer(
+            customer["sub"],
+            "order_created",
+            "Order placed ✅",
+            f"Your order for {prod['name']} ({order.size} / {order.color}) has been placed.",
+            link="/my-orders",
+            order_id=new_order["id"],
+            product_id=order.product_id,
+        ),
+        f"customer order_created notification for {new_order['id']}",
+    )
+    _fire_and_forget(
+        send_order_sms(
+            order.customer_phone, "order_created",
+            {"var1": order.customer_name, "var2": prod["name"], "var3": new_order["id"][:8]},
+        ),
+        f"order_created SMS for {new_order['id']}",
+    )
 
     # No WhatsApp redirect for either payment method any more — the
     # customer's order is placed and confirmed entirely through this API
@@ -667,6 +723,37 @@ async def update_order(order_id: str, update: StatusUpdate, admin=Depends(requir
         await cache_delete("admin:dashboard")
         await cache_delete("analytics:overview")
         await cache_delete("orders:recent")
+
+        # ── Customer notification on status transitions the customer cares
+        #    about — created is already sent from create_order(), so only
+        #    confirmed/shipped/delivered fire here, and only when the status
+        #    actually changed (never re-notify on an unrelated field edit,
+        #    e.g. just adding a tracking_id while status stays "shipped"). ──
+        if update.status and update.status != order.get("status") and update.status in ("confirmed", "shipped", "delivered"):
+            status_copy = {
+                "confirmed": ("Order confirmed ✅", "Your order for {product} has been confirmed and is being prepared."),
+                "shipped":   ("Order shipped 🚚", "Your order for {product} has shipped{tracking}."),
+                "delivered": ("Order delivered 📦", "Your order for {product} has been delivered. We hope you love it!"),
+            }
+            title, msg_template = status_copy[update.status]
+            tracking_note = f" (tracking: {update.tracking_id})" if update.status == "shipped" and update.tracking_id else ""
+            message = msg_template.format(product=order.get("product_name") or "your item", tracking=tracking_note)
+            customer_id = order.get("user_id")
+            _fire_and_forget(
+                notify_customer(
+                    customer_id, f"order_{update.status}", title, message,
+                    link="/my-orders", order_id=order_id, product_id=order.get("product_id"),
+                ),
+                f"customer order_{update.status} notification for {order_id}",
+            )
+            _fire_and_forget(
+                send_order_sms(
+                    order["customer_phone"], f"order_{update.status}",
+                    {"var1": order.get("customer_name", ""), "var2": order.get("product_name", ""),
+                     "var3": update.tracking_id or order_id[:8]},
+                ),
+                f"order_{update.status} SMS for {order_id}",
+            )
 
         payment_type = order.get("payment_type")
 

@@ -1,8 +1,22 @@
 <!-- Admin Sidebar Macro — included in all admin pages -->
 <aside class="sidebar" id="sidebar">
-  <div class="sidebar-logo">
-    <h2>👗 clovical</h2>
-    <p>Admin Panel</p>
+  <div class="sidebar-logo" style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+    <div>
+      <h2>👗 clovical</h2>
+      <p>Admin Panel</p>
+    </div>
+    <div class="notif-bell-wrap">
+      <button class="notif-bell-btn" id="notif-bell-btn" onclick="toggleNotifDropdown(event)" title="Notifications">
+        🔔<span class="notif-badge" id="notif-badge" style="display:none">0</span>
+      </button>
+      <div class="notif-dropdown" id="notif-dropdown">
+        <div class="notif-dropdown-header">
+          <span>Notifications</span>
+          <button type="button" onclick="markAllNotifsRead()">Mark all read</button>
+        </div>
+        <div class="notif-list" id="notif-list"><div class="notif-empty">Loading...</div></div>
+      </div>
+    </div>
   </div>
   <nav class="sidebar-nav">
     <a href="/admin/dashboard" class="nav-item {% if active == 'dashboard' %}active{% endif %}">
@@ -34,3 +48,151 @@
     <button class="logout-btn" onclick="logout()">🚪 Logout</button>
   </div>
 </aside>
+
+<style>
+  .notif-bell-wrap { position: relative; flex-shrink: 0; }
+  .notif-bell-btn {
+    position: relative; background: rgba(255,255,255,.12); border: none; border-radius: 8px;
+    width: 36px; height: 36px; font-size: 1.05rem; cursor: pointer; color: #fff;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .notif-bell-btn:hover { background: rgba(255,255,255,.22); }
+  .notif-badge {
+    position: absolute; top: -4px; right: -4px; background: #E74C3C; color: #fff;
+    font-size: 0.62rem; font-weight: 800; min-width: 16px; height: 16px; padding: 0 3px;
+    border-radius: 999px; display: flex; align-items: center; justify-content: center;
+    line-height: 1; border: 2px solid var(--primary-dark, #1a1a1a);
+  }
+  .notif-dropdown {
+    display: none; position: absolute; top: 44px; left: 0; width: 320px; max-width: 82vw;
+    background: #fff; color: var(--text, #1a1a1a); border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.25); z-index: 200; overflow: hidden;
+    border: 1px solid var(--border, #eee);
+  }
+  .notif-dropdown.open { display: block; }
+  .notif-dropdown-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 14px; border-bottom: 1px solid var(--border, #eee); font-weight: 700; font-size: 0.88rem;
+  }
+  .notif-dropdown-header button {
+    background: none; border: none; color: var(--primary, #6B4EFF); font-size: 0.76rem;
+    font-weight: 600; cursor: pointer;
+  }
+  .notif-list { max-height: 380px; overflow-y: auto; }
+  .notif-empty { padding: 28px 14px; text-align: center; color: var(--muted, #888); font-size: 0.85rem; }
+  .notif-item {
+    display: block; padding: 12px 14px; border-bottom: 1px solid #F2F2F2; cursor: pointer;
+    transition: background .15s;
+  }
+  .notif-item:last-child { border-bottom: none; }
+  .notif-item:hover { background: #FAFAFA; }
+  .notif-item.unread { background: #F6F4FF; }
+  .notif-item-title { font-size: 0.85rem; font-weight: 700; margin-bottom: 2px; }
+  .notif-item-msg { font-size: 0.78rem; color: var(--muted, #666); line-height: 1.4; }
+  .notif-item-time { font-size: 0.7rem; color: #B0B0B0; margin-top: 4px; }
+  .notif-unread-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:#E74C3C; margin-right:6px; vertical-align:middle; }
+</style>
+
+<script>
+(function() {
+  const ROLE = 'admin';
+  const LIST_URL = `/api/notifications/${ROLE}`;
+  const COUNT_URL = `/api/notifications/${ROLE}/unread-count`;
+  const READ_ALL_URL = `/api/notifications/${ROLE}/read-all`;
+  const READ_URL = (id) => `/api/notifications/${ROLE}/${id}/read`;
+  let dropdownLoaded = false;
+
+  function timeAgo(iso) {
+    const diffSec = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+    if (diffSec < 60) return 'just now';
+    if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+    return `${Math.floor(diffSec / 86400)}d ago`;
+  }
+
+  async function refreshBadge() {
+    try {
+      const res = await fetch(COUNT_URL, { credentials: 'same-origin' });
+      if (!res.ok) return;
+      const data = await res.json();
+      const badge = document.getElementById('notif-badge');
+      if (!badge) return;
+      if (data.count > 0) {
+        badge.style.display = 'flex';
+        badge.textContent = data.count > 99 ? '99+' : data.count;
+      } else {
+        badge.style.display = 'none';
+      }
+    } catch (e) { /* silent — background poller */ }
+  }
+
+  function renderList(items) {
+    const list = document.getElementById('notif-list');
+    if (!list) return;
+    if (!items.length) {
+      list.innerHTML = '<div class="notif-empty">No notifications yet.</div>';
+      return;
+    }
+    list.innerHTML = items.map(n => `
+      <a class="notif-item ${n.is_read ? '' : 'unread'}" href="javascript:void(0)" onclick='openNotif(${JSON.stringify(n.id)}, ${JSON.stringify(n.link || "")})'>
+        <div class="notif-item-title">${!n.is_read ? '<span class="notif-unread-dot"></span>' : ''}${escapeHtml(n.title)}</div>
+        ${n.message ? `<div class="notif-item-msg">${escapeHtml(n.message)}</div>` : ''}
+        <div class="notif-item-time">${timeAgo(n.created_at)}</div>
+      </a>
+    `).join('');
+  }
+
+  function escapeHtml(str) {
+    return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  async function loadList() {
+    const list = document.getElementById('notif-list');
+    if (list) list.innerHTML = '<div class="notif-empty">Loading...</div>';
+    try {
+      const res = await fetch(LIST_URL, { credentials: 'same-origin' });
+      if (!res.ok) throw new Error('failed');
+      renderList(await res.json());
+    } catch (e) {
+      if (list) list.innerHTML = '<div class="notif-empty">Could not load notifications.</div>';
+    }
+  }
+
+  window.openNotif = async function(id, link) {
+    try { await fetch(READ_URL(id), { method: 'PUT', credentials: 'same-origin' }); } catch (e) {}
+    refreshBadge();
+    if (link) window.location = link;
+    else loadList();
+  };
+
+  window.markAllNotifsRead = async function(e) {
+    if (e) e.stopPropagation();
+    try { await fetch(READ_ALL_URL, { method: 'PUT', credentials: 'same-origin' }); } catch (e) {}
+    refreshBadge();
+    loadList();
+  };
+
+  window.toggleNotifDropdown = function(e) {
+    if (e) e.stopPropagation();
+    const dd = document.getElementById('notif-dropdown');
+    if (!dd) return;
+    const willOpen = !dd.classList.contains('open');
+    dd.classList.toggle('open', willOpen);
+    if (willOpen && !dropdownLoaded) { loadList(); dropdownLoaded = true; }
+    else if (willOpen) { loadList(); }
+  };
+
+  document.addEventListener('click', (e) => {
+    const dd = document.getElementById('notif-dropdown');
+    const btn = document.getElementById('notif-bell-btn');
+    if (dd && dd.classList.contains('open') && !dd.contains(e.target) && e.target !== btn) {
+      dd.classList.remove('open');
+    }
+  });
+
+  document.addEventListener('DOMContentLoaded', () => {
+    refreshBadge();
+    setInterval(refreshBadge, 25000);
+  });
+})();
+</script>
