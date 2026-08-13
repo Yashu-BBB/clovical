@@ -277,14 +277,6 @@ img { display: block; }
 .btn-block { width: 100%; }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important; }
 
-/* WhatsApp */
-.btn-whatsapp {
-  background: #25D366;
-  color: #fff;
-  font-size: 0.82rem;
-}
-.btn-whatsapp:hover { background: #1ebe5c; transform: translateY(-1px); }
-
 /* ─── PRODUCT CARD ───────────────────────────────────────────────────── */
 .product-card {
   background: #FFFFFF;
