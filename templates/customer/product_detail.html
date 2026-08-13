@@ -4,11 +4,19 @@
   <meta charset="UTF-8">
   <link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title id="page-title">Product — clovical</title>
-  <meta name="description" id="page-desc" content="">
-  <meta property="og:title" id="og-title" content="">
-  <meta property="og:description" id="og-desc" content="">
-  <meta property="og:image" id="og-image" content="">
+  <title id="page-title">{{ product_title }}</title>
+  <meta name="description" id="page-desc" content="{{ product_description }}">
+  <link rel="canonical" href="{{ product_url }}">
+  <meta property="og:type" content="product">
+  <meta property="og:url" content="{{ product_url }}">
+  <meta property="og:site_name" content="clovical">
+  <meta property="og:title" id="og-title" content="{{ product_title }}">
+  <meta property="og:description" id="og-desc" content="{{ product_description }}">
+  <meta property="og:image" id="og-image" content="{{ product_image }}">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{{ product_title }}">
+  <meta name="twitter:description" content="{{ product_description }}">
+  <meta name="twitter:image" content="{{ product_image }}">
   <link rel="stylesheet" href="/static/css/shared.css">
   <style>
     /* ─── IMAGE GALLERY ────────────────────────────────────── */
