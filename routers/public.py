@@ -196,7 +196,7 @@ async def terms_and_conditions_page(request: Request):
 
 @router.get("/cookie-policy", response_class=HTMLResponse)
 async def cookie_policy_page(request: Request):
-    return render("customer/cookies_policy.html", request)
+    return render("customer/cookie_policy.html", request)
 
 
 # ─── Admin Pages ──────────────────────────────────────────────────────────
