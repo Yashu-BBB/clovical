@@ -236,12 +236,6 @@
         <div id="size-chart-empty-msg" class="size-chart-empty">No size chart added. Select a chart type above to get started.</div>
       </div>
 
-      <!-- Stock -->
-      <div class="form-group">
-        <label class="form-label">Overall Stock *</label>
-        <input class="form-control" type="number" min="1" id="stock-input" value="1" required>
-      </div>
-
       <!-- Photos: exactly front + back -->
       <div class="form-group">
         <label class="form-label">Product Photos — Front &amp; Back *</label>
@@ -556,7 +550,6 @@ document.getElementById('request-form').addEventListener('submit', async functio
   fd.append('description', document.getElementById('description-input').value || '');
   fd.append('fabric', document.getElementById('fabric-input').value || '');
   fd.append('shopkeeper_price', document.getElementById('price-input').value);
-  fd.append('stock', document.getElementById('stock-input').value);
   fd.append('sizes', JSON.stringify(selectedSizes));
   fd.append('colors', JSON.stringify(colorsList));
   fd.append('size_stock', JSON.stringify(sizeStockOut));

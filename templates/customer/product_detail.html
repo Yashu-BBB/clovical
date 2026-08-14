@@ -701,6 +701,13 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       </div>
     </div>
 
+    <!-- Reviews -->
+    <section id="reviews-section" class="related-section" style="display:none">
+      <div class="section-eyebrow">Customer Reviews</div>
+      <h2 class="section-title" style="margin-bottom:24px">What people are saying</h2>
+      <div id="reviews-list" style="display:flex;flex-direction:column;gap:16px;max-width:640px"></div>
+    </section>
+
     <!-- Related Products -->
     <section id="related-section" class="related-section" style="display:none">
       <div class="section-eyebrow">You May Also Like</div>
@@ -1018,6 +1025,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         });
 
         loadRelated();
+        loadReviews();
       } catch(e) {
         document.getElementById("skeleton").innerHTML = `
           <div style="grid-column:1/-1;text-align:center;padding:80px 0">
@@ -1134,6 +1142,27 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         document.getElementById("related-section").style.display = "block";
         document.getElementById("related-grid").innerHTML = related.map(p => renderProductCard(p)).join("");
       } catch(e) {}
+    }
+
+    async function loadReviews() {
+      try {
+        const reviews = await apiFetch(`/api/products/${productId}/reviews`);
+        if (!reviews.length) return;
+        document.getElementById("reviews-section").style.display = "block";
+        document.getElementById("reviews-list").innerHTML = reviews.map(r => `
+          <div style="border:1px solid #E8E8E8;border-radius:var(--radius-lg);padding:18px 20px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+              <strong style="font-size:0.9rem">${(r.customer_name || "Verified Buyer").split(" ")[0]}</strong>
+              <span style="color:#F5A623;font-size:0.85rem">${"★".repeat(r.rating)}${"☆".repeat(5 - r.rating)}</span>
+            </div>
+            ${r.review_text ? `<p style="font-size:0.85rem;color:var(--muted);line-height:1.6;margin:0">${escapeHtmlReview(r.review_text)}</p>` : ""}
+          </div>
+        `).join("");
+      } catch(e) {}
+    }
+
+    function escapeHtmlReview(str) {
+      return String(str ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
 
     loadProduct();

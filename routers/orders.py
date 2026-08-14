@@ -613,6 +613,15 @@ async def create_order(order: OrderRequest, request: Request, customer=Depends(r
 
 # ─── CUSTOMER ENDPOINTS ────────────────────────────────────────────────────
 
+class ReviewRequest(BaseModel):
+    rating: int = Field(..., ge=1, le=5)
+    review_text: str = Field("", max_length=2000)
+
+
+# Statuses past which an order can no longer be cancelled by the customer.
+NON_CANCELLABLE_STATUSES = {"shipped", "delivered", "cancelled", "refunded"}
+
+
 @router.get("/mine")
 async def my_orders(checkout_group_id: str | None = None, customer=Depends(require_customer)):
     """
@@ -630,6 +639,11 @@ async def my_orders(checkout_group_id: str | None = None, customer=Depends(requi
     not a live courier lookup — live tracking is a separate, admin-only call
     (see /admin/orders/{id}/track in routers/admin.py) that would need its
     own customer-safe wrapper to expose here; out of scope for now.
+
+    NOTE: registered before GET /{order_id} below — both are single-segment
+    GET routes under this router, and FastAPI matches in registration order,
+    so /mine must come first or it would itself get swallowed by /{order_id}
+    (order_id="mine").
     """
     try:
         query = (
@@ -647,6 +661,145 @@ async def my_orders(checkout_group_id: str | None = None, customer=Depends(requi
         raise HTTPException(status_code=500, detail="Failed to fetch orders")
 
     return {"orders": res.data or []}
+
+
+@router.get("/{order_id}")
+async def my_order_detail(order_id: str, customer=Depends(require_customer)):
+    """
+    Full single-order detail for the "My Orders" click-through view.
+    Ownership scoped to the logged-in customer via .eq(user_id) — never
+    returns another customer's order, 404s instead of leaking existence.
+    """
+    try:
+        res = await run_query(
+            supabase_admin.table("orders").select(
+                "id,product_id,product_name,product_image,size,color,our_price,delivery_fee,"
+                "payment_type,payment_status,status,refund_status,checkout_group_id,created_at,"
+                "customer_name,customer_phone,customer_address,customer_city,customer_pincode,"
+                "courier_name,tracking_id,shipping_status,nimbuspost_awb"
+            )
+            .eq("id", order_id).eq("user_id", customer["sub"]).single()
+        )
+        order = res.data
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+
+        # Whether "Write a Review" should be offered, and whether this order
+        # already has one — checked here so the page doesn't need a second
+        # round trip just to know whether to show the form or the existing review.
+        review_res = await run_query(
+            supabase_admin.table("reviews").select("id,rating,review_text,created_at")
+            .eq("order_id", order_id).maybe_single()
+        )
+        order["review"] = review_res.data if review_res and review_res.data else None
+        order["cancellable"] = order.get("status") not in NON_CANCELLABLE_STATUSES
+
+        return order
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to fetch order detail {order_id} for customer {customer['sub']}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch order")
+
+
+@router.post("/{order_id}/cancel")
+@limiter.limit("10/minute")
+async def cancel_order(order_id: str, request: Request, customer=Depends(require_customer)):
+    """
+    Customer-initiated cancellation. Only allowed before the order has
+    shipped (NON_CANCELLABLE_STATUSES). No automatic refund logic here —
+    if a Cashfree payment was already captured (payment_status == "verified"),
+    the order is flagged refund_status="pending" so admins see it needs
+    manual refund review; nothing is charged/refunded automatically.
+    """
+    try:
+        current = await run_query(
+            supabase_admin.table("orders").select("*")
+            .eq("id", order_id).eq("user_id", customer["sub"]).single()
+        )
+        order = current.data
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        if order.get("status") in NON_CANCELLABLE_STATUSES:
+            raise HTTPException(status_code=400, detail=f"This order can no longer be cancelled (status: {order.get('status')}).")
+
+        updates = {"status": "cancelled"}
+        payment_captured = order.get("payment_type") == "cashfree" and order.get("payment_status") == "verified"
+        if payment_captured:
+            updates["refund_status"] = "pending"
+
+        await run_query(supabase_admin.table("orders").update(updates).eq("id", order_id))
+        logger.info(f"Order {order_id} cancelled by customer {customer['sub']} (refund_pending={payment_captured})")
+
+        await cache_delete("admin:dashboard")
+        await cache_delete("analytics:overview")
+        await cache_delete("orders:recent")
+
+        _fire_and_forget(
+            notify_admins(
+                "order_cancelled",
+                "Order cancelled by customer",
+                f"{order.get('customer_name')} cancelled their order for {order.get('product_name')}."
+                + (" Payment was already captured — refund needs review." if payment_captured else ""),
+                link="/admin/orders",
+                order_id=order_id,
+                product_id=order.get("product_id"),
+            ),
+            f"admin order_cancelled notification for {order_id}",
+        )
+
+        return {"success": True, "status": "cancelled", "refund_status": updates.get("refund_status", order.get("refund_status"))}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to cancel order {order_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to cancel order")
+
+
+@router.post("/{order_id}/review")
+@limiter.limit("10/minute")
+async def submit_review(order_id: str, review: ReviewRequest, request: Request, customer=Depends(require_customer)):
+    """
+    Minimal review: rating + text, tied to the order (and denormalized
+    product_id so the product page can query without joining orders).
+    Only allowed once the order is delivered. One review per order,
+    enforced by the DB's unique(order_id) constraint — a second attempt
+    is rejected with a clear message rather than a raw DB error.
+    """
+    try:
+        current = await run_query(
+            supabase_admin.table("orders").select("id,status,product_id,customer_name")
+            .eq("id", order_id).eq("user_id", customer["sub"]).single()
+        )
+        order = current.data
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        if order.get("status") != "delivered":
+            raise HTTPException(status_code=400, detail="You can review this order once it has been delivered.")
+
+        existing = await run_query(supabase_admin.table("reviews").select("id").eq("order_id", order_id).maybe_single())
+        if existing and existing.data:
+            raise HTTPException(status_code=400, detail="You've already reviewed this order.")
+
+        row = {
+            "order_id": order_id,
+            "product_id": order.get("product_id"),
+            "customer_phone": customer.get("phone") or "",
+            "customer_name": order.get("customer_name"),
+            "rating": review.rating,
+            "review_text": review.review_text.strip(),
+        }
+        res = await run_query(supabase_admin.table("reviews").insert(row))
+        await cache_clear_pattern("products:*")
+        mem_clear_pattern("product:")
+        await cache_delete(f"product:{order.get('product_id')}:reviews")
+        logger.info(f"Review submitted for order {order_id} by customer {customer['sub']}")
+        return res.data[0] if res.data else {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to submit review for order {order_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to submit review")
 
 
 # ─── ADMIN ENDPOINTS ──────────────────────────────────────────────────────
@@ -825,6 +978,30 @@ async def update_order(order_id: str, update: StatusUpdate, admin=Depends(requir
         raise HTTPException(status_code=500, detail="Failed to update order")
 
 
+@router.delete("/admin/{order_id}")
+async def admin_delete_order(order_id: str, admin=Depends(require_admin)):
+    """
+    Permanently removes an order row — distinct from cancellation (which
+    just changes status and keeps the record). Admin-only, full delete
+    from the admin's own management view.
+    """
+    try:
+        existing = await run_query(supabase_admin.table("orders").select("id").eq("id", order_id).single())
+        if not existing.data:
+            raise HTTPException(status_code=404, detail="Order not found")
+        await run_query(supabase_admin.table("orders").delete().eq("id", order_id))
+        await cache_delete("admin:dashboard")
+        await cache_delete("analytics:overview")
+        await cache_delete("orders:recent")
+        logger.info(f"Order {order_id} permanently deleted by admin {admin['sub']}")
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete order {order_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to delete order")
+
+
 @router.get("/admin/recent")
 async def recent_orders(admin=Depends(require_admin)):
     cache_key = "orders:recent"
@@ -865,32 +1042,6 @@ async def shopkeeper_list_orders(status: str | None = None, shopkeeper=Depends(r
     except Exception as e:
         logger.error(f"Shopkeeper: list orders failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch orders")
-
-
-@router.delete("/shopkeeper/{order_id}")
-async def shopkeeper_delete_order(order_id: str, shopkeeper=Depends(require_shopkeeper)):
-    """Lets a shopkeeper remove an order from their own view. Ownership is
-    checked via the .eq(shopkeeper_id) filter on the delete itself, so this
-    can never touch another shopkeeper's order — if it doesn't match, the
-    delete simply affects zero rows."""
-    try:
-        existing = await run_query(
-            supabase_admin.table("orders").select("id")
-            .eq("id", order_id).eq("shopkeeper_id", shopkeeper["shopkeeper_id"]).single()
-        )
-        if not existing.data:
-            raise HTTPException(status_code=404, detail="Order not found")
-        await run_query(
-            supabase_admin.table("orders").delete()
-            .eq("id", order_id).eq("shopkeeper_id", shopkeeper["shopkeeper_id"])
-        )
-        logger.info(f"Shopkeeper {shopkeeper['shopkeeper_id']} deleted order {order_id}")
-        return {"success": True}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Shopkeeper: failed to delete order {order_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to delete order")
 
 
 @router.get("/shopkeeper/{order_id}/pdf-data")

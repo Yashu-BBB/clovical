@@ -1,421 +1,677 @@
-import json
 import logging
+from fastapi import APIRouter, Request, Depends, HTTPException, UploadFile, File, Form, Query
+from pydantic import BaseModel
+from typing import Optional, List
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+import json
 import uuid
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+
 from utils.db import supabase_admin, run_query, run_blocking
-from utils.auth_utils import require_admin, require_shopkeeper
-from utils.image_utils import compress_and_thumbnail, compress_to_webp
 from utils.cache import (
     cache_get, cache_set, cache_clear_pattern,
     two_layer_get, two_layer_set, two_layer_clear_pattern, mem_clear_pattern,
 )
-from utils.notifications import notify_admins, notify_shopkeeper
+from utils.auth_utils import require_admin
+from utils.notifications import check_out_of_stock
+from utils.stock_utils import derive_total_stock
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
 
-MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10MB client-side cap (server still re-encodes/caps dimensions regardless)
-MAX_ADMIN_IMAGES = 6               # same cap as the admin add-product form
-BUCKET = "product-images"
+SAFE_FIELDS = "id,name,description,our_price,mrp,sizes,colors,image,images,category,gender,featured,stock,size_stock,color_stock,shopkeeper_code,view_count,created_at,size_chart,fabric"
 
-
-def _storage_path_from_url(url: str) -> str | None:
-    """Extracts the storage object path (everything after the bucket name in
-    the public URL) so a stored image can be hard-deleted later. Returns
-    None if the URL doesn't look like one of ours."""
-    if not url or f"/{BUCKET}/" not in url:
-        return None
-    return url.split(f"/{BUCKET}/", 1)[1]
+MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB per image
+MAX_TOTAL_IMAGES = 6
 
 
-async def _delete_storage_files(urls: list[str]):
-    """Best-effort hard delete of storage objects. Never raises — a failed
-    storage cleanup should never block the DB operation that triggered it,
-    but it is logged so orphaned files can be tracked down."""
-    paths = [p for p in (_storage_path_from_url(u) for u in urls if u) if p]
-    if not paths:
-        return
+# ─── PUBLIC ENDPOINTS ─────────────────────────────────────────────────────
+
+@router.get("/")
+@limiter.limit("60/minute")
+async def list_products(
+    request: Request,
+    category: Optional[str] = None,
+    search: Optional[str] = None,      # searches name, color, size, category, shopkeeper code
+    sort: Optional[str] = None,
+    featured: Optional[bool] = None,
+    gender: Optional[str] = None,
+    min_price: Optional[float] = None,
+    max_price: Optional[float] = None,
+    sizes: Optional[str] = None,        # comma separated e.g. "S,M,XL"
+    colors: Optional[str] = None,       # comma separated e.g. "Red,Black"
+    on_sale: Optional[bool] = None,     # only discounted products
+):
+    cache_key = f"products:list:{category}:{search}:{sort}:{featured}:{gender}:{min_price}:{max_price}:{sizes}:{colors}:{on_sale}"
+    cached = await cache_get(cache_key)
+    if cached:
+        return cached
+
     try:
-        await run_blocking(supabase_admin.storage.from_(BUCKET).remove, paths)
-        logger.info(f"Hard-deleted {len(paths)} storage file(s): {paths}")
+        query = supabase_admin.table("products").select(SAFE_FIELDS).gt("stock", 0)
+        if category:
+            query = query.eq("category", category)
+        if featured is not None:
+            query = query.eq("featured", featured)
+        if gender:
+            query = query.eq("gender", gender)
+
+        if search:
+            # name / category / shopkeeper_code text match, or search term present in the sizes/colors JSONB arrays
+            safe_search = search.replace('"', '')
+            query = query.or_(
+                f'name.ilike.%{safe_search}%,'
+                f'category.ilike.%{safe_search}%,'
+                f'shopkeeper_code.ilike.%{safe_search}%,'
+                f'colors.cs.["{safe_search}"],'
+                f'sizes.cs.["{safe_search}"]'
+            )
+
+        if min_price is not None:
+            query = query.gte("our_price", min_price)
+        if max_price is not None:
+            query = query.lte("our_price", max_price)
+
+        if sizes:
+            size_list = [s.strip() for s in sizes.split(",") if s.strip()]
+            if size_list:
+                or_clause = ",".join(f'sizes.cs.["{s}"]' for s in size_list)
+                query = query.or_(or_clause)
+
+        if colors:
+            color_list = [c.strip() for c in colors.split(",") if c.strip()]
+            if color_list:
+                or_clause = ",".join(f'colors.cs.["{c}"]' for c in color_list)
+                query = query.or_(or_clause)
+
+        if on_sale:
+            query = query.not_.is_("mrp", "null")
+
+        if sort == "price_asc":
+            query = query.order("our_price", desc=False)
+        elif sort == "price_desc":
+            query = query.order("our_price", desc=True)
+        elif sort == "discount":
+            query = query.not_.is_("mrp", "null").order("mrp", desc=True)
+        else:
+            query = query.order("created_at", desc=True)
+
+        res = await run_query(query)
+        data = res.data or []
+        await cache_set(cache_key, data, ttl=900)
+        return data
     except Exception as e:
-        logger.error(f"Failed to hard-delete storage files {paths}: {e}", exc_info=True)
+        logger.error(f"Failed to fetch products: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch products")
 
 
-async def _upload_bytes(data: bytes, ext: str, content_type: str, prefix: str) -> str:
-    fname = f"{prefix}/{uuid.uuid4()}.{ext}"
-    await run_blocking(
-        supabase_admin.storage.from_(BUCKET).upload,
-        fname, data, {"content-type": content_type}
-    )
-    return await run_blocking(supabase_admin.storage.from_(BUCKET).get_public_url, fname)
-
-
-def _parse_json_dict(raw: str | None) -> dict:
+@router.get("/filter-options")
+@limiter.limit("30/minute")
+async def get_filter_options(request: Request, gender: Optional[str] = None):
+    cache_key = f"products:filter-options:{gender}"
+    cached = await two_layer_get(cache_key)
+    if cached:
+        return cached
     try:
-        parsed = json.loads(raw) if raw else {}
-        return parsed if isinstance(parsed, dict) else {}
-    except Exception:
-        return {}
+        query = supabase_admin.table("products").select("sizes,colors,our_price").gt("stock", 0)
+        if gender:
+            query = query.eq("gender", gender)
+        res = await run_query(query)
+        rows = res.data or []
+
+        size_set, color_set = set(), set()
+        prices = []
+        for row in rows:
+            for s in (row.get("sizes") or []):
+                size_set.add(s)
+            for c in (row.get("colors") or []):
+                color_set.add(c)
+            if row.get("our_price") is not None:
+                prices.append(row["our_price"])
+
+        result = {
+            "sizes": sorted(size_set),
+            "colors": sorted(color_set),
+            "price_range": {
+                "min": min(prices) if prices else 0,
+                "max": max(prices) if prices else 0,
+            },
+        }
+        await two_layer_set(cache_key, result, redis_ttl=900, mem_ttl=120)
+        return result
+    except Exception as e:
+        logger.error(f"Failed to fetch filter options: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch filter options")
 
 
-def _parse_json_list(raw: str | None) -> list:
+@router.get("/featured")
+async def featured_products():
+    cached = await cache_get("products:featured")
+    if cached:
+        return cached
     try:
-        parsed = json.loads(raw) if raw else []
-        return parsed if isinstance(parsed, list) else []
-    except Exception:
+        res = await run_query(supabase_admin.table("products").select(SAFE_FIELDS).eq("featured", True).gt("stock", 0).limit(8))
+        data = res.data or []
+        await cache_set("products:featured", data, ttl=900)
+        return data
+    except Exception as e:
+        logger.error(f"Failed to fetch featured products: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch products")
+
+
+@router.get("/categories")
+async def list_categories():
+    cached = await cache_get("products:categories")
+    if cached:
+        return cached
+    try:
+        res = await run_query(supabase_admin.table("products").select("category").gt("stock", 0))
+        cats = list(set(p["category"] for p in (res.data or []) if p.get("category")))
+        await cache_set("products:categories", cats, ttl=1800)
+        return cats
+    except Exception as e:
+        logger.error(f"Failed to fetch categories: {e}", exc_info=True)
         return []
 
 
-# ─── SHOPKEEPER-FACING ──────────────────────────────────────────────────────
+@router.get("/{product_id}")
+@limiter.limit("60/minute")
+async def get_product(request: Request, product_id: str):
+    cache_key = f"product:{product_id}"
+    try:
+        cached = await two_layer_get(cache_key)
+        if cached:
+            # View count still increments on every request, cache hit or miss.
+            # Read the live count rather than the cached one so concurrent
+            # cache hits don't clobber each other's increments.
+            try:
+                live = await run_query(supabase_admin.table("products").select("view_count").eq("id", product_id).single())
+                if live.data:
+                    new_count = live.data["view_count"] + 1
+                    await run_query(supabase_admin.table("products").update({"view_count": new_count}).eq("id", product_id))
+                    cached = {**cached, "view_count": new_count}
+                    logger.info(f"Product view incremented (cache hit): {product_id}")
+            except Exception as e:
+                logger.warning(f"View count increment failed for {product_id}: {e}")
+            return cached
 
-@router.post("/submit")
-async def submit_request(
+        res = await run_query(supabase_admin.table("products").select(SAFE_FIELDS).eq("id", product_id).single())
+        if not res.data:
+            raise HTTPException(status_code=404, detail="Product not found")
+        await run_query(supabase_admin.table("products").update({"view_count": res.data["view_count"] + 1}).eq("id", product_id))
+        logger.info(f"Product view incremented: {product_id}")
+        await two_layer_set(cache_key, res.data, redis_ttl=900, mem_ttl=120)
+        return res.data
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to fetch product {product_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch product")
+
+
+@router.get("/{product_id}/reviews")
+async def product_reviews(product_id: str):
+    """Public read of a product's reviews — newest first. Minimal shape:
+    rating, review_text, customer_name, created_at. No moderation queue,
+    no photo uploads (per PART A.3 scope)."""
+    cache_key = f"product:{product_id}:reviews"
+    try:
+        cached = await cache_get(cache_key)
+        if cached is not None:
+            return cached
+        res = await run_query(
+            supabase_admin.table("reviews")
+            .select("id,rating,review_text,customer_name,created_at")
+            .eq("product_id", product_id)
+            .order("created_at", desc=True)
+        )
+        data = res.data or []
+        await cache_set(cache_key, data, ttl=300)
+        return data
+    except Exception as e:
+        logger.error(f"Failed to fetch reviews for product {product_id}: {e}", exc_info=True)
+        return []
+
+
+@router.get("/{product_id}/related")
+async def related_products(product_id: str):
+    cache_key = f"product:{product_id}:related"
+    try:
+        cached = await cache_get(cache_key)
+        if cached:
+            return cached
+
+        prod = await run_query(supabase_admin.table("products").select("category,gender").eq("id", product_id).single())
+        if not prod.data:
+            return []
+        q = supabase_admin.table("products").select(SAFE_FIELDS).eq("category", prod.data["category"]).neq("id", product_id).gt("stock", 0).limit(4)
+        if prod.data.get("gender"):
+            q = q.eq("gender", prod.data["gender"])
+        res = await run_query(q)
+        data = res.data or []
+        await cache_set(cache_key, data, ttl=900)
+        return data
+    except Exception as e:
+        logger.error(f"Failed related products: {e}", exc_info=True)
+        return []
+
+
+# ─── ADMIN ENDPOINTS ──────────────────────────────────────────────────────
+
+@router.get("/admin/all")
+async def admin_list_products(admin=Depends(require_admin)):
+    try:
+        res = await run_query(supabase_admin.table("products").select("*").order("created_at", desc=True))
+        return res.data or []
+    except Exception as e:
+        logger.error(f"Admin: failed to list products: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch products")
+
+
+@router.post("/admin/add")
+async def add_product(
     name: str = Form(..., max_length=200),
     description: str = Form("", max_length=2000),
+    our_price: float = Form(...),
     shopkeeper_price: float = Form(...),
     sizes: str = Form("[]"),
     colors: str = Form("[]"),
     category: str = Form("", max_length=100),
     gender: str = Form("Girls"),
     fabric: str = Form("", max_length=100),
-    stock: int = Form(1),
-    size_stock: str = Form("{}"),
-    color_stock: str = Form("{}"),
+    featured: bool = Form(False),
+    mrp: float = Form(None),
+    shopkeeper_id: int = Form(...),
     size_chart: str = Form(None),
-    image_front: UploadFile = File(...),
-    image_back: UploadFile = File(...),
-    shopkeeper=Depends(require_shopkeeper),
+    clear_size_chart: str = Form("false"),
+    size_stock: str = Form("{}"),   # JSON map, e.g. {"S": 4, "M": 0}
+    color_stock: str = Form("{}"),  # JSON map, e.g. {"Red": 3, "Black": 0}
+    images: List[UploadFile] = File(default=[]),
+    admin=Depends(require_admin)
 ):
-    """
-    Creates a pending product REQUEST (never a live product). Exactly two
-    photos are required — front and back of the garment — matching the
-    admin's own add-product format for every other field (sizes with per-
-    size stock, colors with per-colour stock, size chart, fabric), but
-    deliberately excluding our_price/MRP and any shopkeeper picker: the
-    shopkeeper's identity comes from their login session only.
-    """
     try:
-        async def _process(upload: UploadFile, label: str) -> tuple[str, str]:
-            contents = await upload.read()
+        try:
+            parsed_size_stock = json.loads(size_stock) if size_stock else {}
+            if not isinstance(parsed_size_stock, dict):
+                parsed_size_stock = {}
+        except Exception:
+            parsed_size_stock = {}
+        try:
+            parsed_color_stock = json.loads(color_stock) if color_stock else {}
+            if not isinstance(parsed_color_stock, dict):
+                parsed_color_stock = {}
+        except Exception:
+            parsed_color_stock = {}
+
+        # Overall `stock` is no longer a field the admin fills in — it's
+        # always derived from the per-size stock map (the sole source of
+        # truth now). fallback=1 only matters for a product with no size
+        # variants added at all.
+        derived_stock = derive_total_stock(parsed_size_stock, fallback=1)
+
+        sk = await run_query(supabase_admin.table("shopkeepers").select("id").eq("id", shopkeeper_id).single())
+        if not sk.data:
+            raise HTTPException(status_code=404, detail="Shopkeeper not found")
+        shopkeeper_code = f"#{sk.data['id']:03d}"
+
+        # Upload each image (max 6) to Supabase storage
+        image_urls = []
+        valid_images = [img for img in images if img and img.filename]
+        if len(valid_images) > MAX_TOTAL_IMAGES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Maximum {MAX_TOTAL_IMAGES} images allowed per product."
+            )
+        for img in valid_images[:MAX_TOTAL_IMAGES]:
+            contents = await img.read()
             if len(contents) > MAX_IMAGE_SIZE:
-                raise HTTPException(status_code=400, detail=f"{label} image exceeds 10MB limit. Please choose a smaller photo.")
-            try:
-                full_bytes, thumb_bytes = await run_blocking(compress_and_thumbnail, contents)
-            except Exception as e:
-                logger.error(f"Image compression failed ({label}) for shopkeeper {shopkeeper['shopkeeper_id']}: {e}", exc_info=True)
-                raise HTTPException(status_code=400, detail=f"Could not process the {label.lower()} photo — please try a different image.")
-            prefix = f"requests/{shopkeeper['shopkeeper_id']}"
-            full_url = await _upload_bytes(full_bytes, "webp", "image/webp", prefix)
-            thumb_url = await _upload_bytes(thumb_bytes, "webp", "image/webp", f"{prefix}/thumb")
-            return full_url, thumb_url
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Image '{img.filename}' exceeds 5MB limit. Please compress and try again."
+                )
+            ext = img.filename.rsplit(".", 1)[-1].lower()
+            fname = f"{uuid.uuid4()}.{ext}"
+            await run_blocking(
+                supabase_admin.storage.from_("product-images").upload,
+                fname, contents, {"content-type": img.content_type or "image/jpeg"}
+            )
+            url = await run_blocking(supabase_admin.storage.from_("product-images").get_public_url, fname)
+            image_urls.append(url)
 
-        front_url, front_thumb = await _process(image_front, "Front")
-        back_url, back_thumb = await _process(image_back, "Back")
+        # First image = primary (backward compat)
+        primary_image = image_urls[0] if image_urls else None
 
-        parsed_size_stock = _parse_json_dict(size_stock)
-        parsed_color_stock = _parse_json_dict(color_stock)
+        # Parse size chart
         parsed_size_chart = None
-        if size_chart and size_chart.strip():
+        if size_chart and size_chart.strip() and clear_size_chart != "true":
             try:
                 parsed_size_chart = json.loads(size_chart)
             except Exception:
                 parsed_size_chart = None
 
-        row = {
-            "shopkeeper_id": shopkeeper["shopkeeper_id"],
+        product = {
             "name": name,
             "description": description,
+            "our_price": our_price,
             "shopkeeper_price": shopkeeper_price,
             "sizes": json.loads(sizes) if isinstance(sizes, str) else sizes,
             "colors": json.loads(colors) if isinstance(colors, str) else colors,
-            "size_stock": parsed_size_stock,
-            "color_stock": parsed_color_stock,
-            "size_chart": parsed_size_chart,
             "category": category,
             "gender": gender,
             "fabric": fabric or None,
-            "stock": stock,
-            "shopkeeper_image_front": front_url,
-            "shopkeeper_image_front_thumb": front_thumb,
-            "shopkeeper_image_back": back_url,
-            "shopkeeper_image_back_thumb": back_thumb,
-            "status": "pending",
+            "mrp": mrp if mrp else None,
+            "featured": featured,
+            "stock": derived_stock,
+            "size_stock": parsed_size_stock,
+            "color_stock": parsed_color_stock,
+            "shopkeeper_id": shopkeeper_id,
+            "shopkeeper_code": shopkeeper_code,
+            "image": primary_image,
+            "images": image_urls,
+            "size_chart": parsed_size_chart,
         }
-        res = await run_query(supabase_admin.table("product_requests").insert(row))
-        await two_layer_clear_pattern(f"requests:mine:{shopkeeper['shopkeeper_id']}")
-        await cache_clear_pattern("requests:admin:*")
-        logger.info(f"Product request submitted by shopkeeper {shopkeeper['shopkeeper_id']}: {name}")
-        new_request = res.data[0]
-        await notify_admins(
-            "new_request",
-            f"New product request — {name}",
-            f"Shopkeeper #{shopkeeper['shopkeeper_id']:03d} submitted '{name}' for review.",
-            link="/admin/requests",
-            request_id=new_request["id"],
-        )
-        return new_request
+        res = await run_query(supabase_admin.table("products").insert(product))
+        await cache_clear_pattern("products:*")
+        await two_layer_clear_pattern("products:filter-options:")
+        mem_clear_pattern("product:")
+        logger.info(f"Product added: {name} by admin {admin['sub']}")
+        return res.data[0]
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to submit product request: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to submit request")
+        logger.error(f"Failed to add product: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to add product: {str(e)}")
 
 
-@router.get("/mine")
-async def my_requests(shopkeeper=Depends(require_shopkeeper)):
-    cache_key = f"requests:mine:{shopkeeper['shopkeeper_id']}"
+@router.put("/admin/{product_id}")
+async def edit_product(
+    product_id: str,
+    name: str = Form(None, max_length=200),
+    description: str = Form(None, max_length=2000),
+    our_price: float = Form(None),
+    shopkeeper_price: float = Form(None),
+    sizes: str = Form(None),
+    colors: str = Form(None),
+    category: str = Form(None, max_length=100),
+    gender: str = Form(None),
+    fabric: str = Form(None, max_length=100),
+    featured: bool = Form(None),
+    mrp: float = Form(None),
+    shopkeeper_id: int = Form(None),
+    size_chart: str = Form(None),
+    clear_size_chart: str = Form("false"),
+    size_stock: str = Form(None),   # JSON map, e.g. {"S": 4, "M": 0}
+    color_stock: str = Form(None),  # JSON map, e.g. {"Red": 3, "Black": 0}
+    keep_images: str = Form("[]"),       # JSON array of existing image URLs to keep
+    new_images: List[UploadFile] = File(default=[]),   # newly uploaded images
+    admin=Depends(require_admin)
+):
+    try:
+        # Pre-fetch current stock state whenever a stock-related field is
+        # being changed — needed both to detect a >0 → 0 crossing after the
+        # update, and (below) as the fallback total when size_stock isn't
+        # part of this particular request.
+        before_stock = None
+        if size_stock is not None or color_stock is not None:
+            pre = await run_query(supabase_admin.table("products").select("name,stock,size_stock,color_stock").eq("id", product_id).single())
+            before_stock = pre.data
+
+        updates = {}
+        if name is not None: updates["name"] = name
+        if description is not None: updates["description"] = description
+        if our_price is not None: updates["our_price"] = our_price
+        if shopkeeper_price is not None: updates["shopkeeper_price"] = shopkeeper_price
+        if sizes is not None: updates["sizes"] = json.loads(sizes)
+        if colors is not None: updates["colors"] = json.loads(colors)
+        # Safety net: category is required in the admin UI, so a blank value
+        # here almost certainly means a frontend glitch (e.g. a dropdown
+        # that hadn't finished loading yet) rather than an intentional
+        # "clear the category" action — never let that silently wipe out a
+        # product's existing category.
+        if category is not None and category.strip():
+            updates["category"] = category
+        if gender is not None: updates["gender"] = gender
+        if fabric is not None: updates["fabric"] = fabric or None
+        if mrp is not None: updates["mrp"] = mrp if mrp > 0 else None
+        if featured is not None: updates["featured"] = featured
+        if size_stock is not None:
+            try:
+                parsed = json.loads(size_stock)
+                if isinstance(parsed, dict):
+                    updates["size_stock"] = parsed
+                    # Overall `stock` is no longer admin-entered — it's
+                    # always re-derived here from the size_stock this edit
+                    # is saving, so the two can never drift apart. Falls
+                    # back to whatever was previously stored only if this
+                    # product has no size variants at all.
+                    prev_stock = (before_stock or {}).get("stock", 1)
+                    updates["stock"] = derive_total_stock(parsed, fallback=prev_stock)
+            except Exception:
+                pass
+        if color_stock is not None:
+            try:
+                parsed = json.loads(color_stock)
+                if isinstance(parsed, dict):
+                    updates["color_stock"] = parsed
+            except Exception:
+                pass
+        if shopkeeper_id is not None:
+            updates["shopkeeper_id"] = shopkeeper_id
+            updates["shopkeeper_code"] = f"#{shopkeeper_id:03d}"
+
+        # Size chart
+        if clear_size_chart == "true":
+            updates["size_chart"] = None
+        elif size_chart and size_chart.strip():
+            try:
+                updates["size_chart"] = json.loads(size_chart)
+            except Exception:
+                pass
+
+        # Multi-image handling
+        existing_urls = []
+        try:
+            existing_urls = json.loads(keep_images) if keep_images else []
+        except Exception:
+            existing_urls = []
+
+        # Upload new images
+        new_urls = []
+        valid_new = [img for img in new_images if img and img.filename]
+        if len(existing_urls) + len(valid_new) > MAX_TOTAL_IMAGES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Maximum {MAX_TOTAL_IMAGES} images allowed per product."
+            )
+        slots_remaining = max(0, MAX_TOTAL_IMAGES - len(existing_urls))
+        for img in valid_new[:slots_remaining]:
+            contents = await img.read()
+            if len(contents) > MAX_IMAGE_SIZE:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Image '{img.filename}' exceeds 5MB limit. Please compress and try again."
+                )
+            ext = img.filename.rsplit(".", 1)[-1].lower()
+            fname = f"{uuid.uuid4()}.{ext}"
+            await run_blocking(
+                supabase_admin.storage.from_("product-images").upload,
+                fname, contents, {"content-type": img.content_type or "image/jpeg"}
+            )
+            url = await run_blocking(supabase_admin.storage.from_("product-images").get_public_url, fname)
+            new_urls.append(url)
+
+        # Merge and cap at 6
+        all_image_urls = (existing_urls + new_urls)[:6]
+
+        # Only update images if the field was explicitly sent (keep_images or new_images present)
+        if keep_images != "[]" or valid_new:
+            updates["images"] = all_image_urls
+            updates["image"] = all_image_urls[0] if all_image_urls else None
+        elif valid_new:
+            # new images only (no keep_images sent) — append to existing
+            if new_urls:
+                updates["images"] = new_urls
+                updates["image"] = new_urls[0]
+
+        res = await run_query(supabase_admin.table("products").update(updates).eq("id", product_id))
+        await cache_clear_pattern("products:*")
+        await two_layer_clear_pattern("products:filter-options:")
+        mem_clear_pattern("product:")
+        logger.info(f"Product edited: {product_id} by admin {admin['sub']}")
+        updated = res.data[0] if res.data else {}
+        if before_stock:
+            await check_out_of_stock(
+                product_id, before_stock.get("name") or updated.get("name") or "Product",
+                before_stock,
+                {"stock": updated.get("stock"), "size_stock": updated.get("size_stock"), "color_stock": updated.get("color_stock")},
+            )
+        return updated
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to edit product: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to edit product: {str(e)}")
+
+
+@router.delete("/admin/{product_id}/image")
+async def delete_product_image(
+    product_id: str,
+    image_url: str = Query(...),
+    admin=Depends(require_admin)
+):
+    """Remove a single image URL from the product's images array."""
+    try:
+        res = await run_query(supabase_admin.table("products").select("image,images").eq("id", product_id).single())
+        if not res.data:
+            raise HTTPException(status_code=404, detail="Product not found")
+
+        current_images = res.data.get("images") or []
+        updated_images = [u for u in current_images if u != image_url]
+        primary = updated_images[0] if updated_images else None
+
+        await run_query(
+            supabase_admin.table("products").update({
+                "images": updated_images,
+                "image": primary
+            }).eq("id", product_id)
+        )
+
+        await cache_clear_pattern("products:*")
+        mem_clear_pattern("product:")
+        logger.info(f"Image removed from product {product_id} by admin {admin['sub']}")
+        return {"success": True, "images": updated_images}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete product image: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to delete image")
+
+
+@router.delete("/admin/{product_id}")
+async def delete_product(product_id: str, admin=Depends(require_admin)):
+    try:
+        prod = await run_query(supabase_admin.table("products").select("name").eq("id", product_id).single())
+        await run_query(supabase_admin.table("products").delete().eq("id", product_id))
+        await cache_clear_pattern("products:*")
+        await two_layer_clear_pattern("products:filter-options:")
+        mem_clear_pattern("product:")
+        logger.info(f"Product deleted: {prod.data.get('name')} by admin {admin['sub']}")
+        return {"success": True}
+    except Exception as e:
+        logger.error(f"Failed to delete product: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to delete product")
+
+
+# ─── STOCK / SOLD TRACKING (space-saving, text-only) ───────────────────────
+# For marking offline (in-shop) sales against an existing product. Deliberately
+# returns/accepts no image data at all — just enough fields to identify the
+# product and adjust its stock, so this list stays lightweight even with a
+# large catalog.
+
+STOCK_FIELDS = "id,name,category,shopkeeper_code,stock,size_stock,color_stock"
+
+
+@router.get("/admin/stock-list")
+async def admin_stock_list(admin=Depends(require_admin)):
+    cache_key = "products:stock-list"
     try:
         cached = await two_layer_get(cache_key)
         if cached is not None:
             return cached
         res = await run_query(
-            supabase_admin.table("product_requests")
-            .select("id,name,category,gender,shopkeeper_price,stock,status,shopkeeper_image_front_thumb,created_at,reviewed_at")
-            .eq("shopkeeper_id", shopkeeper["shopkeeper_id"])
-            .order("created_at", desc=True)
+            supabase_admin.table("products").select(STOCK_FIELDS).order("name")
         )
         data = res.data or []
-        await two_layer_set(cache_key, data, redis_ttl=300, mem_ttl=60)
+        await two_layer_set(cache_key, data, redis_ttl=300, mem_ttl=30)
         return data
     except Exception as e:
-        logger.error(f"Failed to list own requests: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to fetch your requests")
+        logger.error(f"Failed to fetch stock list: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch stock list")
 
 
-# ─── ADMIN-FACING ───────────────────────────────────────────────────────────
+class StockUpdate(BaseModel):
+    stock: Optional[int] = None
+    size_stock: Optional[dict] = None
+    color_stock: Optional[dict] = None
 
-@router.get("/admin/all")
-async def admin_list_requests(status: str = "pending", admin=Depends(require_admin)):
-    cache_key = f"requests:admin:{status}"
+
+@router.put("/admin/stock/{product_id}")
+async def admin_update_stock(product_id: str, data: StockUpdate, admin=Depends(require_admin)):
+    """Text/number-only stock update — e.g. for recording an offline sale
+    made at the shopkeeper's physical shop. Never touches image fields."""
     try:
-        cached = await cache_get(cache_key)
-        if cached is not None:
-            return cached
-        q = supabase_admin.table("product_requests").select("*").order("created_at", desc=True)
-        if status and status != "all":
-            q = q.eq("status", status)
-        res = await run_query(q)
-        data = res.data or []
-        await cache_set(cache_key, data, ttl=120)
-        return data
-    except Exception as e:
-        logger.error(f"Failed to list product requests: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to fetch requests")
-
-
-@router.get("/admin/{request_id}")
-async def admin_get_request(request_id: str, admin=Depends(require_admin)):
-    """Single request, full detail — used to open the review modal (which
-    reuses the admin add-product modal, prefilled from this data)."""
-    try:
-        res = await run_query(supabase_admin.table("product_requests").select("*").eq("id", request_id).single())
-        if not res.data:
-            raise HTTPException(status_code=404, detail="Request not found")
-        return res.data
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to fetch request {request_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to fetch request")
-
-
-@router.put("/admin/{request_id}")
-async def update_request(
-    request_id: str,
-    our_price: float = Form(None),
-    mrp: float = Form(None),
-    keep_images: str = Form("[]"),                    # JSON array of existing admin_images URLs to keep
-    new_images: List[UploadFile] = File(default=[]),  # newly uploaded images (same uploader as admin add-product)
-    admin=Depends(require_admin),
-):
-    """
-    Lets the admin set our_price/MRP and attach/replace the listing image(s)
-    ahead of accepting the request — same multi-image uploader (1–6 photos)
-    as the admin add-product modal. Can be called multiple times (e.g. to
-    reorder/swap images) before /accept is called.
-    """
-    try:
-        existing = await run_query(supabase_admin.table("product_requests").select("*").eq("id", request_id).single())
-        if not existing.data:
-            raise HTTPException(status_code=404, detail="Request not found")
-        if existing.data["status"] != "pending":
-            raise HTTPException(status_code=400, detail="Only pending requests can be edited")
+        pre = await run_query(supabase_admin.table("products").select("name,stock,size_stock,color_stock").eq("id", product_id).single())
+        before_stock = pre.data
 
         updates = {}
-        if our_price is not None:
-            updates["our_price"] = our_price
-        if mrp is not None:
-            updates["mrp"] = mrp if mrp > 0 else None
+        if data.stock is not None:
+            updates["stock"] = max(0, data.stock)
+        if data.size_stock is not None:
+            updates["size_stock"] = data.size_stock
+        if data.color_stock is not None:
+            updates["color_stock"] = data.color_stock
+        if not updates:
+            raise HTTPException(status_code=400, detail="No fields to update")
 
-        # Multi-image handling — identical pattern to the admin product editor.
-        existing_urls = _parse_json_list(keep_images)
-        current_images = existing.data.get("admin_images") or []
-        removed_urls = [u for u in current_images if u not in existing_urls]
-
-        valid_new = [img for img in new_images if img and img.filename]
-        if len(existing_urls) + len(valid_new) > MAX_ADMIN_IMAGES:
-            raise HTTPException(status_code=400, detail=f"Maximum {MAX_ADMIN_IMAGES} images allowed.")
-
-        new_urls = []
-        for img in valid_new:
-            contents = await img.read()
-            if len(contents) > MAX_IMAGE_SIZE:
-                raise HTTPException(status_code=400, detail=f"Image '{img.filename}' exceeds 10MB limit.")
-            try:
-                webp_bytes = await run_blocking(compress_to_webp, contents)
-            except Exception as e:
-                logger.error(f"Admin image compression failed for request {request_id}: {e}", exc_info=True)
-                raise HTTPException(status_code=400, detail="Could not process that image.")
-            url = await _upload_bytes(webp_bytes, "webp", "image/webp", "listing")
-            new_urls.append(url)
-
-        if keep_images != "[]" or valid_new:
-            all_images = (existing_urls + new_urls)[:MAX_ADMIN_IMAGES]
-            updates["admin_images"] = all_images
-            # Hard-delete any admin-attached images that were dropped from the set.
-            await _delete_storage_files(removed_urls)
-
-        if updates:
-            await run_query(supabase_admin.table("product_requests").update(updates).eq("id", request_id))
-
-        await cache_clear_pattern("requests:admin:*")
-        logger.info(f"Request {request_id} updated by admin {admin['sub']}: {list(updates.keys())}")
-        res = await run_query(supabase_admin.table("product_requests").select("*").eq("id", request_id).single())
-        return res.data
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to update request {request_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to update request")
-
-
-@router.post("/admin/{request_id}/accept")
-async def accept_request(request_id: str, admin=Depends(require_admin)):
-    """
-    Converts a pending request into a live product, using the admin's
-    uploaded image(s) as the product's stored images — the same
-    single-stored-image-per-product convention as products added directly
-    by admin. The shopkeeper's original front/back photos (full + thumb,
-    4 files total) are permanently deleted from storage at this point —
-    only the admin's final listing image(s) remain, referenced by URL.
-    """
-    try:
-        res = await run_query(supabase_admin.table("product_requests").select("*").eq("id", request_id).single())
-        r = res.data
-        if not r:
-            raise HTTPException(status_code=404, detail="Request not found")
-        if r["status"] != "pending":
-            raise HTTPException(status_code=400, detail="Request has already been reviewed")
-        if r.get("our_price") is None:
-            raise HTTPException(status_code=400, detail="Set Our Price before accepting")
-        admin_images = r.get("admin_images") or []
-        if not admin_images:
-            raise HTTPException(status_code=400, detail="Attach at least one product image before accepting")
-
-        sk = await run_query(supabase_admin.table("shopkeepers").select("id").eq("id", r["shopkeeper_id"]).single())
-        if not sk.data:
-            raise HTTPException(status_code=404, detail="Shopkeeper no longer exists")
-        shopkeeper_code = f"#{sk.data['id']:03d}"
-
-        product = {
-            "name": r["name"],
-            "description": r.get("description") or "",
-            "our_price": r["our_price"],
-            "shopkeeper_price": r["shopkeeper_price"],
-            "mrp": r.get("mrp"),
-            "sizes": r.get("sizes") or [],
-            "colors": r.get("colors") or [],
-            "size_stock": r.get("size_stock") or {},
-            "color_stock": r.get("color_stock") or {},
-            "size_chart": r.get("size_chart"),
-            "category": r.get("category"),
-            "gender": r.get("gender"),
-            "fabric": r.get("fabric"),
-            "featured": False,
-            "stock": r.get("stock") or 1,
-            "shopkeeper_id": r["shopkeeper_id"],
-            "shopkeeper_code": shopkeeper_code,
-            "image": admin_images[0],
-            "images": admin_images,
-        }
-        prod_res = await run_query(supabase_admin.table("products").insert(product))
-        new_product = prod_res.data[0]
-
-        # Hard-delete the shopkeeper's original front/back uploads — only the
-        # admin's final listing image(s) survive anywhere.
-        await _delete_storage_files([
-            r.get("shopkeeper_image_front"), r.get("shopkeeper_image_front_thumb"),
-            r.get("shopkeeper_image_back"), r.get("shopkeeper_image_back_thumb"),
-        ])
-
-        await run_query(supabase_admin.table("product_requests").update({
-            "status": "accepted",
-            "product_id": new_product["id"],
-            "shopkeeper_image_front": None,
-            "shopkeeper_image_front_thumb": None,
-            "shopkeeper_image_back": None,
-            "shopkeeper_image_back_thumb": None,
-            "reviewed_at": "now()",
-        }).eq("id", request_id))
-
-        await cache_clear_pattern("requests:admin:*")
+        res = await run_query(supabase_admin.table("products").update(updates).eq("id", product_id))
         await cache_clear_pattern("products:*")
         await two_layer_clear_pattern("products:filter-options:")
         mem_clear_pattern("product:")
-        await two_layer_clear_pattern(f"requests:mine:{r['shopkeeper_id']}")
-        await two_layer_clear_pattern(f"shopkeeper:products:{r['shopkeeper_id']}")
-        logger.info(f"Request {request_id} accepted by admin {admin['sub']} → product {new_product['id']}")
-        await notify_shopkeeper(
-            r["shopkeeper_id"],
-            "request_accepted",
-            "Your request was accepted! 🎉",
-            f"'{r['name']}' has been approved and is now live on the store.",
-            link="/shopkeeper/products",
-            request_id=request_id,
-            product_id=new_product["id"],
-        )
-        return {"success": True, "product": new_product}
+        logger.info(f"Stock updated for product {product_id} by admin {admin['sub']}: {updates}")
+        updated = res.data[0] if res.data else {}
+        if before_stock:
+            await check_out_of_stock(
+                product_id, before_stock.get("name") or "Product",
+                before_stock,
+                {"stock": updated.get("stock"), "size_stock": updated.get("size_stock"), "color_stock": updated.get("color_stock")},
+            )
+        return updated
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to accept request {request_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to accept request")
+        logger.error(f"Failed to update stock for {product_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to update stock")
 
 
-@router.delete("/admin/{request_id}")
-async def reject_request(request_id: str, admin=Depends(require_admin)):
-    """Rejects and permanently deletes a request: the DB row AND every
-    associated image file (shopkeeper's front/back originals + any
-    admin-attached listing images) are hard-deleted so nothing is left
-    orphaned in storage."""
+@router.post("/admin/stock/{product_id}/sold")
+async def admin_mark_sold(product_id: str, qty: int = 1, admin=Depends(require_admin)):
+    """Quick 'mark N sold' action — decrements overall stock by qty (floors at 0)."""
     try:
-        res = await run_query(supabase_admin.table("product_requests").select("*").eq("id", request_id).single())
-        r = res.data
-        if not r:
-            raise HTTPException(status_code=404, detail="Request not found")
-
-        await _delete_storage_files([
-            r.get("shopkeeper_image_front"), r.get("shopkeeper_image_front_thumb"),
-            r.get("shopkeeper_image_back"), r.get("shopkeeper_image_back_thumb"),
-            *(r.get("admin_images") or []),
-        ])
-        await run_query(supabase_admin.table("product_requests").delete().eq("id", request_id))
-
-        await cache_clear_pattern("requests:admin:*")
-        await two_layer_clear_pattern(f"requests:mine:{r['shopkeeper_id']}")
-        logger.info(f"Request {request_id} rejected & hard-deleted by admin {admin['sub']}")
-        await notify_shopkeeper(
-            r["shopkeeper_id"],
-            "request_rejected",
-            "Your request was rejected",
-            f"'{r['name']}' was not approved and has been removed from your requests.",
-            link="/shopkeeper/products",
-        )
-        return {"success": True}
+        res = await run_query(supabase_admin.table("products").select("name,stock").eq("id", product_id).single())
+        if not res.data:
+            raise HTTPException(status_code=404, detail="Product not found")
+        old_stock = res.data.get("stock") or 0
+        new_stock = max(0, old_stock - max(1, qty))
+        await run_query(supabase_admin.table("products").update({"stock": new_stock}).eq("id", product_id))
+        await cache_clear_pattern("products:*")
+        await two_layer_clear_pattern("products:filter-options:")
+        mem_clear_pattern("product:")
+        logger.info(f"Product {product_id} marked sold (-{qty}) by admin {admin['sub']}, new stock={new_stock}")
+        await check_out_of_stock(product_id, res.data.get("name") or "Product", {"stock": old_stock}, {"stock": new_stock})
+        return {"success": True, "stock": new_stock}
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to reject request {request_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to reject request")
+        logger.error(f"Failed to mark sold for {product_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to update stock")

@@ -57,6 +57,17 @@
   </div>
 </div>
 
+<!-- Order Detail Modal -->
+<div class="modal-overlay" id="detail-modal">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-header">
+      <h3 class="modal-title">Order Details</h3>
+      <button class="modal-close" onclick="closeDetailModal()">×</button>
+    </div>
+    <div id="detail-body">Loading...</div>
+  </div>
+</div>
+
 <div id="toast-container"></div>
 <script src="/static/js/shared.js"></script>
 <script>
@@ -81,9 +92,9 @@ async function loadOrders() {
         <td><span class="badge badge-gold">${o.status}</span></td>
         <td>${new Date(o.created_at).toLocaleDateString('en-IN')}</td>
         <td style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-outline btn-sm" onclick="viewOrderDetail('${o.id}')">View Details</button>
           <button class="btn btn-outline btn-sm" onclick="downloadOrderPDF('${o.id}', this)">Generate PDF</button>
           ${o.package_pdf_status === 'ready' ? `<button class="btn btn-outline btn-sm" onclick="downloadPackagePDF('${o.id}', this)">📦 Package PDF</button>` : ''}
-          <button class="btn btn-danger btn-sm" onclick="deleteOrder('${o.id}')">Delete</button>
         </td>
       </tr>
     `).join('');
@@ -270,16 +281,38 @@ async function buildOrderPDF(data) {
   doc.save(filename);
 }
 
-async function deleteOrder(orderId) {
-  if (!confirm('Remove this order from your list? This cannot be undone.')) return;
+// Read-only order detail modal — reuses the same PII-free pdf-data endpoint
+// already used for PDF generation. Shopkeepers get visibility only, no
+// delete/cancel power (that stays admin-only).
+async function viewOrderDetail(orderId) {
+  const modal = document.getElementById('detail-modal');
+  const body = document.getElementById('detail-body');
+  body.innerHTML = 'Loading...';
+  modal.classList.add('open');
   try {
-    await apiFetch(`/api/orders/shopkeeper/${orderId}`, { method: 'DELETE' });
-    showToast('Order removed', 'warning');
-    loadOrders();
-  } catch(e) {
-    showToast(e.message || 'Failed to delete order', 'error');
+    const data = await apiFetch(`/api/orders/shopkeeper/${orderId}/pdf-data`);
+    body.innerHTML = `
+      <div style="display:flex;gap:14px;align-items:center;margin-bottom:16px">
+        ${data.product.image ? `<img src="${data.product.image}" style="width:60px;height:60px;border-radius:8px;object-fit:cover;border:1px solid var(--border)">` : ''}
+        <div>
+          <div style="font-weight:600">${data.product.name || '—'}</div>
+          <div style="font-size:0.82rem;color:var(--muted)">Size: ${data.product.size || '—'} · Color: ${data.product.color || '—'}</div>
+          <div style="font-weight:700;margin-top:4px">You Get: ₹${Number(data.product.shopkeeper_price || 0).toLocaleString('en-IN')}</div>
+        </div>
+      </div>
+      <div style="font-size:0.85rem;line-height:1.9">
+        <div><strong>Status:</strong> <span class="badge badge-gold">${data.order.status || '—'}</span></div>
+        <div><strong>Payment:</strong> ${(data.payment.type || '—').toUpperCase()} · ${data.payment.status || '—'}</div>
+        <div><strong>Order Date:</strong> ${data.order.created_at ? new Date(data.order.created_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '—'}</div>
+        ${data.shipping.tracking_id ? `<div><strong>Tracking:</strong> ${data.shipping.courier_name ? data.shipping.courier_name + ' · ' : ''}${data.shipping.tracking_id}</div>` : ''}
+      </div>
+    `;
+  } catch (e) {
+    body.innerHTML = `<div class="alert alert-danger">${e.message || "Couldn't load this order."}</div>`;
   }
 }
+
+function closeDetailModal() { document.getElementById('detail-modal').classList.remove('open'); }
 
 async function skLogout() {
   await apiFetch('/api/shopkeeper-auth/logout', { method: 'POST' });

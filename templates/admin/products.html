@@ -255,7 +255,7 @@
 
         <!-- Per-size stock -->
         <div style="margin-top:12px">
-          <label class="form-label" style="font-size:0.8rem">Stock per size <span style="color:var(--muted);font-weight:400">— leave blank to not track that size separately</span></label>
+          <label class="form-label" style="font-size:0.8rem">Stock per size <span style="color:var(--muted);font-weight:400">— this is now the only place stock is tracked; total stock shown in the product list is the sum of these</span></label>
           <div id="size-stock-rows" class="variant-stock-rows"></div>
         </div>
         <input type="hidden" name="size_stock" id="size-stock-hidden" value="{}">
@@ -311,12 +311,8 @@
         <input type="hidden" name="clear_size_chart" id="clear-size-chart-hidden" value="false">
       </div>
 
-      <!-- Stock + Shopkeeper -->
+      <!-- Shopkeeper -->
       <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Stock</label>
-          <input class="form-control" name="stock" type="number" min="0" value="1">
-        </div>
         <div class="form-group">
           <label class="form-label">Shopkeeper *</label>
           <select class="form-control" name="shopkeeper_id" id="sk-select" required>
@@ -357,9 +353,9 @@ let editingId = null;
 let selectedSizes = [];
 
 // ─── PER-VARIANT STOCK ──────────────────────────────────────────────────────
-// Maps like { "S": 4, "M": 0 } / { "Red": 3, "Black": 0 }. A size/colour with
-// no entry here has no per-variant restriction and just relies on the
-// overall Stock field — so this is fully optional and backward-compatible.
+// Maps like { "S": 4, "M": 0 } / { "Red": 3, "Black": 0 }. Per-size stock is
+// now the sole source of truth for the product's overall stock (summed
+// server-side) — color stock remains an optional secondary restriction.
 let variantSizeStock = {};
 let variantColorStock = {};
 
@@ -947,7 +943,6 @@ function openEdit(p) {
   form.our_price.value = p.our_price;
   form.shopkeeper_price.value = p.shopkeeper_price;
   form.colors_raw.value = (p.colors || []).join(", ");
-  form.stock.value = p.stock;
   form.mrp.value = (p.mrp !== null && p.mrp !== undefined) ? p.mrp : "";
   document.getElementById("featured-cb").checked = p.featured;
   updateDiscountPreview();
@@ -1036,7 +1031,6 @@ document.getElementById("product-form").addEventListener("submit", async functio
   fd.append('fabric', form.fabric?.value || '');
   fd.append('our_price', form.our_price.value);
   fd.append('shopkeeper_price', form.shopkeeper_price.value);
-  fd.append('stock', form.stock.value);
   fd.append('mrp', form.mrp?.value || '');
   fd.append('sizes', JSON.stringify(selectedSizes));
   const colorsRaw = form.colors_raw?.value || '';

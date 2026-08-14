@@ -217,6 +217,7 @@ async function loadOrders() {
             ${o.label_url ? `<button class="btn btn-outline btn-sm" onclick="printLabel('${o.id}')">Print Label</button>` : ''}
             ${o.nimbuspost_awb ? `<button class="btn btn-outline btn-sm" onclick="trackShipment('${o.id}')">Track</button>` : ''}
             ${o.nimbuspost_awb ? `<button class="btn btn-danger btn-sm" onclick="cancelShipment('${o.id}')">Cancel Shipment</button>` : ''}
+            <button class="btn btn-danger btn-sm" onclick="deleteOrder('${o.id}')">Delete</button>
           </div>
         </td>
       </tr>
@@ -324,6 +325,19 @@ async function cancelShipment(orderId) {
     loadOrders();
   } catch(e) {
     showToast(e.message || "Failed to cancel shipment", "error");
+  }
+}
+
+// Permanent removal from the admin's own management view — distinct from
+// cancellation (which just changes status and keeps the order record).
+async function deleteOrder(orderId) {
+  if (!confirm("Permanently delete this order? This cannot be undone.")) return;
+  try {
+    await apiFetch(`/api/orders/admin/${orderId}`, { method: "DELETE" });
+    showToast("Order deleted", "warning");
+    loadOrders();
+  } catch(e) {
+    showToast(e.message || "Failed to delete order", "error");
   }
 }
 
