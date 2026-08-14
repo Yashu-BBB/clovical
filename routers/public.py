@@ -144,6 +144,22 @@ async def robots_txt():
     return Response(content="\n".join(lines), media_type="text/plain")
 
 
+# ─── Push notifications: service worker at root scope ─────────────────────
+# The file physically lives at static/sw.js, but a service worker can only
+# control paths at or below the URL it's served from. Serving it here at
+# /sw.js (with Service-Worker-Allowed) lets it handle notification clicks
+# that should focus/open pages anywhere on the site, not just /static/*.
+@router.get("/sw.js")
+async def push_service_worker():
+    with open("static/sw.js", "r", encoding="utf-8") as f:
+        content = f.read()
+    return Response(
+        content=content,
+        media_type="application/javascript",
+        headers={"Service-Worker-Allowed": "/"},
+    )
+
+
 # ─── Customer Pages ───────────────────────────────────────────────────────
 
 DEFAULT_OG_IMAGE = f"{SITE_URL}/static/images/favicon.svg"

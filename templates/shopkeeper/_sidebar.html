@@ -180,3 +180,11 @@
   });
 })();
 </script>
+
+<!-- Real push notifications (browser/phone popup), additive to the in-app
+     bell above — see static/js/push-notifications.js. Only prompts after
+     this panel has loaded (i.e. the shopkeeper is already logged in), and
+     only via the dismissible in-page banner, never an unsolicited native
+     popup on page load. -->
+<script src="/static/js/push-notifications.js"></script>
+<script>ClovicalPush.init('shopkeeper');</script>

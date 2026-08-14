@@ -179,4 +179,30 @@ function toggleMobileMenu() {
 document.addEventListener("DOMContentLoaded", () => {
   updateCartBadge();
   updateWishlistBadge();
+  initPushForLoggedInCustomer();
 });
+
+// ─── Push notifications (real browser/phone popups) ────────────────────────
+// Additive to the in-app notification bell on My Orders — only relevant for
+// a logged-in customer, so this checks session state via the existing
+// /api/customer-auth/me endpoint first and does nothing on guest pages.
+// Loaded lazily (only when logged in) so guest browsing pages never pay for
+// the extra request or the Firebase SDK download. See
+// static/js/push-notifications.js for the actual permission/token flow.
+async function initPushForLoggedInCustomer() {
+  try {
+    const res = await fetch("/api/customer-auth/me", { credentials: "same-origin" });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.logged_in) return;
+
+    const script = document.createElement("script");
+    script.src = "/static/js/push-notifications.js";
+    script.onload = () => {
+      if (window.ClovicalPush) window.ClovicalPush.init("customer");
+    };
+    document.head.appendChild(script);
+  } catch (e) {
+    // silent — push is a nice-to-have, never block the page on it
+  }
+}

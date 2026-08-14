@@ -8,15 +8,21 @@ creation, status updates, request submit/accept/reject, stock updates) —
 this router is read/ack only.
 """
 import logging
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field
 from utils.db import supabase_admin, run_query
 from utils.auth_utils import require_admin, require_shopkeeper, require_customer
 from utils.cache import cache_get, cache_set, cache_clear_pattern
+from utils.fcm_push import register_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 LIST_LIMIT = 30
+
+
+class RegisterTokenRequest(BaseModel):
+    token: str = Field(..., min_length=10, max_length=4096)
 
 
 async def _list_for(recipient_type: str, recipient_id, unread_only: bool):
@@ -140,3 +146,32 @@ async def customer_mark_read(notif_id: str, customer=Depends(require_customer)):
 @router.put("/customer/read-all")
 async def customer_mark_all_read(customer=Depends(require_customer)):
     return await _mark_all_read("customer", customer["sub"])
+
+
+# ─── PUSH (FCM) — register a device token, one endpoint per panel ───────
+# Read-only session deps are reused unchanged from above; write goes to
+# push_subscriptions (schema_push_notifications.sql), a separate table from
+# `notifications`. This never touches the in-app notification system.
+
+async def _register(recipient_type: str, recipient_id, body: RegisterTokenRequest, request: Request):
+    try:
+        await register_token(recipient_type, recipient_id, body.token, request.headers.get("user-agent"))
+        return {"success": True}
+    except Exception as e:
+        logger.error(f"Failed to register push token ({recipient_type}/{recipient_id}): {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to register for push notifications")
+
+
+@router.post("/admin/register-token")
+async def admin_register_token(body: RegisterTokenRequest, request: Request, admin=Depends(require_admin)):
+    return await _register("admin", None, body, request)
+
+
+@router.post("/shopkeeper/register-token")
+async def shopkeeper_register_token(body: RegisterTokenRequest, request: Request, shopkeeper=Depends(require_shopkeeper)):
+    return await _register("shopkeeper", shopkeeper["shopkeeper_id"], body, request)
+
+
+@router.post("/customer/register-token")
+async def customer_register_token(body: RegisterTokenRequest, request: Request, customer=Depends(require_customer)):
+    return await _register("customer", customer["sub"], body, request)

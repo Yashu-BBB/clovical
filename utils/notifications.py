@@ -11,11 +11,37 @@ Recipient model (see schema_notifications.sql):
   • shopkeeper → recipient_id = shopkeepers.id (str)
   • customer   → recipient_id = customers.id   (str/uuid)
 """
+import asyncio
 import logging
 from utils.db import supabase_admin, run_query
 from utils.cache import cache_clear_pattern
+from utils.fcm_push import send_push
 
 logger = logging.getLogger(__name__)
+
+
+def _fire_push(recipient_type: str, recipient_id, title: str, message: str, link: str | None):
+    """
+    Schedules the FCM push as a background task so it never adds latency
+    to a notification write — several call sites (e.g. routers/requests.py)
+    `await notify_admins(...)` directly rather than fire-and-forgetting it,
+    and a slow/unconfigured FCM call must not make those awaits any slower
+    than they already are. send_push() itself never raises; this wrapper
+    just makes sure a task-creation failure (e.g. no running loop, which
+    shouldn't happen here but cost nothing to guard) can't take down the
+    in-app notification write either.
+    """
+    try:
+        task = asyncio.create_task(send_push(recipient_type, recipient_id, title, message, link))
+
+        def _log_if_failed(t: asyncio.Task):
+            exc = t.exception() if not t.cancelled() else None
+            if exc:
+                logger.error(f"Push send failed ({recipient_type}/{recipient_id}): {exc}", exc_info=exc)
+
+        task.add_done_callback(_log_if_failed)
+    except Exception as e:
+        logger.error(f"Could not schedule push send ({recipient_type}/{recipient_id}): {e}", exc_info=True)
 
 
 async def _insert(recipient_type: str, recipient_id, type_: str, title: str,
@@ -40,6 +66,9 @@ async def _insert(recipient_type: str, recipient_id, type_: str, title: str,
             await cache_clear_pattern("notif:admin:*")
         else:
             await cache_clear_pattern(f"notif:{recipient_type}:{recipient_id}:*")
+        # Real push (browser/phone popup) alongside the in-app row above —
+        # additive only, never blocks and never affects the write above.
+        _fire_push(recipient_type, recipient_id, title, message, link)
     except Exception as e:
         logger.error(f"Failed to create notification ({recipient_type}/{recipient_id}, {type_}): {e}", exc_info=True)
 
