@@ -4,9 +4,20 @@
   <meta charset="UTF-8">
   <link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>clovical — Premium Fashion</title>
-  <meta name="description" content="Shop curated fashion for Boys & Girls. Premium styles from local boutiques delivered across India.">
+  <title>{{ page_title }}</title>
+  <meta name="description" content="{{ page_description }}">
+  <link rel="canonical" href="{{ canonical_url }}">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="{{ canonical_url }}">
+  <meta property="og:site_name" content="clovical">
+  <meta property="og:title" content="{{ page_title }}">
+  <meta property="og:description" content="{{ page_description }}">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="{{ page_title }}">
+  <meta name="twitter:description" content="{{ page_description }}">
   <link rel="stylesheet" href="/static/css/shared.css">
+  <script type="application/ld+json">{{ organization_ld_json | safe }}</script>
+  <script type="application/ld+json">{{ website_ld_json | safe }}</script>
   <style>
     /* ─── HERO ───────────────────────────────────────────────── */
     .hero {

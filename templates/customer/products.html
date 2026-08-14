@@ -4,7 +4,14 @@
   <meta charset="UTF-8">
   <link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Shop — clovical</title>
+  <title>{{ page_title }}</title>
+  <meta name="description" content="{{ page_description }}">
+  <link rel="canonical" href="{{ canonical_url }}">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="{{ canonical_url }}">
+  <meta property="og:site_name" content="clovical">
+  <meta property="og:title" content="{{ page_title }}">
+  <meta property="og:description" content="{{ page_description }}">
   <link rel="stylesheet" href="/static/css/shared.css">
   <style>
     .shop-header {
@@ -689,6 +696,7 @@
     const urlParams = new URLSearchParams(location.search);
     const urlGender = urlParams.get('gender');
     const urlCat = urlParams.get('category');
+    const urlSearch = urlParams.get('search');
 
     function debounce(fn, delay) {
       let t;
@@ -703,6 +711,13 @@
 
       if (urlGender === 'Boys') currentGender = 'Boys';
       if (urlCat) currentCat = urlCat;
+      if (urlSearch) {
+        searchTerm = urlSearch;
+        const searchInput = document.getElementById('search-input');
+        if (searchInput) searchInput.value = urlSearch;
+        const clearBtn = document.getElementById('search-clear-btn');
+        if (clearBtn) clearBtn.classList.add('show');
+      }
       updateGenderUI();
       await loadCategories();
       await loadFilterOptions();

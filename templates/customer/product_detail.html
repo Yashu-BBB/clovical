@@ -18,6 +18,8 @@
   <meta name="twitter:description" content="{{ product_description }}">
   <meta name="twitter:image" content="{{ product_image }}">
   <link rel="stylesheet" href="/static/css/shared.css">
+  {% if product_ld_json %}<script type="application/ld+json">{{ product_ld_json | safe }}</script>{% endif %}
+  {% if breadcrumb_ld_json %}<script type="application/ld+json">{{ breadcrumb_ld_json | safe }}</script>{% endif %}
   <style>
     /* ─── IMAGE GALLERY ────────────────────────────────────── */
     .gallery-wrap {
@@ -587,7 +589,7 @@
           <div class="thumb-strip hidden" id="thumb-strip"></div>
           <div class="main-img-container">
             <div class="main-img-wrap" id="main-img-wrap">
-              <img id="product-img" src="" alt="" loading="eager">
+              <img id="product-img" src="" alt="{{ product_name }}" loading="eager">
               <div class="img-badge">
                 <span id="stock-badge" class="badge badge-success">In Stock</span>
               </div>
@@ -607,7 +609,7 @@
 
       <!-- INFO COLUMN -->
       <div class="info-col">
-        <div class="breadcrumb">
+        <div class="breadcrumb" id="breadcrumb">
           <a href="/">Home</a>
           <span class="breadcrumb-sep">/</span>
           <a href="/products">Shop</a>
@@ -768,7 +770,7 @@
         thumbStrip.classList.remove('hidden');
         thumbStrip.innerHTML = images.map((src, i) =>
           `<img src="${src}" class="thumb-item${i === 0 ? ' active' : ''}" loading="${i === 0 ? 'eager' : 'lazy'}"
-                onclick="showImage(${i})" alt="View ${i+1}">`
+                onclick="showImage(${i})" alt="${escapeHtml(product.name)} — view ${i+1}">`
         ).join('');
       } else {
         thumbStrip.classList.add('hidden');
@@ -892,6 +894,17 @@
         document.getElementById("og-desc").content = product.description || "";
         document.getElementById("og-image").content = product.image || "";
         document.getElementById("breadcrumb-name").textContent = product.name;
+        if (product.category) {
+          const bcName = document.getElementById("breadcrumb-name");
+          const catLink = document.createElement("a");
+          catLink.href = `/products?category=${encodeURIComponent(product.category)}&gender=${encodeURIComponent(product.gender || "Girls")}`;
+          catLink.textContent = product.category;
+          const sep = document.createElement("span");
+          sep.className = "breadcrumb-sep";
+          sep.textContent = "/";
+          bcName.parentNode.insertBefore(catLink, bcName);
+          bcName.parentNode.insertBefore(sep, bcName);
+        }
 
         // ─── GALLERY ──────────────────────────────────────────────────
         const images = (Array.isArray(product.images) && product.images.length > 0)

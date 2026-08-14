@@ -1,4 +1,6 @@
+import json
 from datetime import datetime, timezone
+from urllib.parse import urlencode
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
@@ -13,7 +15,21 @@ SITE_URL = "https://clovical.in"
 
 
 def render(template: str, request: Request, **ctx):
+    # `site_url` + `canonical_url` are injected for every page so templates
+    # can build a correct canonical/OG URL off one source of truth (SITE_URL)
+    # instead of hardcoding the domain in each .html file. Query params are
+    # deliberately dropped from the canonical (filters/search/sort on listing
+    # pages shouldn't create separate indexable URLs).
+    ctx.setdefault("site_url", SITE_URL)
+    ctx.setdefault("canonical_url", f"{SITE_URL}{request.url.path}")
     return templates.TemplateResponse(template, {"request": request, **ctx})
+
+
+def _ld_json(data: dict) -> str:
+    """Serialize a dict to a JSON-LD-safe string for embedding inside a
+    <script type="application/ld+json"> block. Escapes '</' so a value
+    can never prematurely close the surrounding script tag."""
+    return json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
 
 
 # ─── SEO: sitemap.xml & robots.txt ─────────────────────────────────────────
@@ -69,7 +85,29 @@ async def sitemap_xml():
         # static pages at minimum.
         pass
 
-    all_urls = static_urls + product_urls
+    # Dynamic category listing pages (/products?category=...&gender=...),
+    # also pulled live so new categories show up automatically.
+    category_urls = []
+    try:
+        result = await run_query(
+            supabase_admin.table("categories").select("name,gender")
+        )
+        for row in (result.data or []):
+            name = row.get("name")
+            gender = row.get("gender")
+            if not name or not gender:
+                continue
+            qs = urlencode({"category": name, "gender": gender})
+            category_urls.append({
+                "loc": f"{SITE_URL}/products?{qs}",
+                "changefreq": "weekly",
+                "priority": "0.6",
+                "lastmod": today,
+            })
+    except Exception:
+        pass
+
+    all_urls = static_urls + category_urls + product_urls
 
     body = ['<?xml version="1.0" encoding="UTF-8"?>',
             '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
@@ -108,15 +146,58 @@ async def robots_txt():
 
 # ─── Customer Pages ───────────────────────────────────────────────────────
 
+DEFAULT_OG_IMAGE = f"{SITE_URL}/static/images/favicon.svg"
+
+HOME_TITLE = "clovical — Curated Kids' Fashion from Local Boutiques"
+HOME_DESCRIPTION = (
+    "clovical connects local boutique shops with online shoppers, offering "
+    "curated, quality kids' fashion for Boys & Girls, sourced from real "
+    "local sellers."
+)
+
 @router.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def home(request: Request):
-    return render("customer/home.html", request)
+    website_ld_json = _ld_json({
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "clovical",
+        "url": f"{SITE_URL}/",
+        "potentialAction": {
+            "@type": "SearchAction",
+            "target": {
+                "@type": "EntryPoint",
+                "urlTemplate": f"{SITE_URL}/products?search={{search_term_string}}",
+            },
+            "query-input": "required name=search_term_string",
+        },
+    })
+    organization_ld_json = _ld_json({
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": "clovical",
+        "url": f"{SITE_URL}/",
+        "logo": DEFAULT_OG_IMAGE,
+    })
+    return render(
+        "customer/home.html",
+        request,
+        page_title=HOME_TITLE,
+        page_description=HOME_DESCRIPTION,
+        organization_ld_json=organization_ld_json,
+        website_ld_json=website_ld_json,
+    )
 
 @router.get("/products", response_class=HTMLResponse)
 async def products_page(request: Request):
-    return render("customer/products.html", request)
-
-DEFAULT_OG_IMAGE = f"{SITE_URL}/static/images/favicon.svg"
+    gender = request.query_params.get("gender")
+    title = "Girls Collection — clovical" if gender == "Girls" else (
+        "Boys Collection — clovical" if gender == "Boys" else "Shop All Collections — clovical"
+    )
+    description = (
+        "Browse clovical's full collection of curated kids' fashion from local "
+        "boutique shops — filter by size, colour, category and price."
+    )
+    return render("customer/products.html", request, page_title=title, page_description=description)
 
 @router.get("/product/{product_id}", response_class=HTMLResponse)
 async def product_detail(request: Request, product_id: str):
@@ -125,31 +206,100 @@ async def product_detail(request: Request, product_id: str):
     # loads client-side, so this is purely for SEO / link-preview purposes.
     # A plain, uncached select — deliberately NOT the /api/products/{id}
     # endpoint, so this never double-increments view_count.
+    product_name = "Product"
     product_title = "Product — clovical"
     product_description = "Shop quality kids' clothing at clovical, connecting local boutique shops to online customers."
     product_image = DEFAULT_OG_IMAGE
+    product_url = f"{SITE_URL}/product/{product_id}"
+    product_ld_json = None
+    breadcrumb_ld_json = None
+    category = None
 
     try:
         res = await run_query(
             supabase_admin.table("products")
-            .select("name,description,image")
+            .select("name,description,image,images,our_price,mrp,stock,category,gender")
             .eq("id", product_id)
             .single()
         )
         if res.data:
-            name = (res.data.get("name") or "Product").strip()
-            desc = (res.data.get("description") or "").strip()
+            data = res.data
+            name = (data.get("name") or "Product").strip()
+            desc = (data.get("description") or "").strip()
             if not desc:
                 desc = f"Shop {name} at clovical — quality kids' clothing, delivered fast."
+            ld_desc = desc  # full-length description for JSON-LD (no truncation needed there)
             if len(desc) > 160:
                 desc = desc[:157].rstrip() + "..."
 
+            product_name = name
             product_title = f"{name} — clovical"
             product_description = desc
+            category = data.get("category")
 
-            img = res.data.get("image")
+            img = data.get("image")
             if img:
                 product_image = img if img.startswith("http") else f"{SITE_URL}{img}"
+
+            # Gather all image URLs (gallery) for JSON-LD, falling back to the
+            # single `image` field for older products without an `images` array.
+            raw_images = data.get("images") or []
+            if not isinstance(raw_images, list) or not raw_images:
+                raw_images = [img] if img else []
+            ld_images = [
+                (u if u.startswith("http") else f"{SITE_URL}{u}")
+                for u in raw_images if u
+            ] or [product_image]
+
+            price = data.get("our_price")
+            stock = data.get("stock") or 0
+
+            product_ld_json = _ld_json({
+                "@context": "https://schema.org",
+                "@type": "Product",
+                "name": name,
+                "description": ld_desc,
+                "image": ld_images,
+                "url": product_url,
+                "brand": {"@type": "Brand", "name": "clovical"},
+                "offers": {
+                    "@type": "Offer",
+                    "url": product_url,
+                    "priceCurrency": "INR",
+                    "price": f"{float(price):.2f}" if price is not None else "0.00",
+                    "availability": (
+                        "https://schema.org/InStock" if stock > 0
+                        else "https://schema.org/OutOfStock"
+                    ),
+                    "itemCondition": "https://schema.org/NewCondition",
+                },
+            })
+
+            # BreadcrumbList mirrors the on-page breadcrumb: Home / Shop
+            # (/ Category, if the product has one) / Product name.
+            crumbs = [
+                {"@type": "ListItem", "position": 1, "name": "Home", "item": f"{SITE_URL}/"},
+                {"@type": "ListItem", "position": 2, "name": "Shop", "item": f"{SITE_URL}/products"},
+            ]
+            position = 3
+            if category:
+                gender = data.get("gender") or "Girls"
+                cat_qs = urlencode({"category": category, "gender": gender})
+                crumbs.append({
+                    "@type": "ListItem",
+                    "position": position,
+                    "name": category,
+                    "item": f"{SITE_URL}/products?{cat_qs}",
+                })
+                position += 1
+            crumbs.append({
+                "@type": "ListItem", "position": position, "name": name, "item": product_url
+            })
+            breadcrumb_ld_json = _ld_json({
+                "@context": "https://schema.org",
+                "@type": "BreadcrumbList",
+                "itemListElement": crumbs,
+            })
     except Exception:
         # Product not found / DB hiccup — page still renders with generic
         # meta tags above, and the client-side fetch will show a proper
@@ -160,10 +310,14 @@ async def product_detail(request: Request, product_id: str):
         "customer/product_detail.html",
         request,
         product_id=product_id,
+        product_name=product_name,
         product_title=product_title,
         product_description=product_description,
         product_image=product_image,
-        product_url=f"{SITE_URL}/product/{product_id}",
+        product_url=product_url,
+        product_category=category,
+        product_ld_json=product_ld_json,
+        breadcrumb_ld_json=breadcrumb_ld_json,
     )
 
 @router.get("/cart", response_class=HTMLResponse)
