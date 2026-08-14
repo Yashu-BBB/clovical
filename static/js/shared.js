@@ -58,6 +58,22 @@ const Cart = {
     }
     this.save(items);
     showToast("Added to cart");
+
+    // ─── GA4: add_to_cart ─────────────────────────────────────────────
+    window.dataLayer = window.dataLayer || [];
+    window.dataLayer.push({ ecommerce: null }); // clear previous ecommerce object
+    window.dataLayer.push({
+      event: "add_to_cart",
+      ecommerce: {
+        items: [{
+          item_id: product.id,
+          item_name: product.name,
+          price: product.our_price,
+          item_category: product.category || undefined,
+          quantity: 1
+        }]
+      }
+    });
   },
   remove(id, size, color) {
     const items = this.get().filter(i => !(i.id === id && i.size === size && i.color === color));

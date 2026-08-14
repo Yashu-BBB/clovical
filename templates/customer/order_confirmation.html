@@ -56,8 +56,19 @@
     .confirm-actions { display: flex; flex-direction: column; gap: 10px; }
     .confirm-summary { text-align: left; margin: 28px 0; }
   </style>
+<!-- Google Tag Manager -->
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-5VPGBWNH');</script>
+<!-- End Google Tag Manager -->
 </head>
 <body>
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-5VPGBWNH"
+height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
 
   <nav class="navbar">
     <a href="/" class="nav-logo">clovical</a>
@@ -127,6 +138,30 @@
       }
       document.getElementById("confirm-actions").innerHTML = `
         <a href="/products" class="btn btn-primary btn-block">Continue Shopping</a>`;
+
+      // ─── GA4: purchase ──────────────────────────────────────────────
+      // Only reached when poll() has resolved payment_status === "SUCCESS"
+      // from the backend-verified /api/payments/cashfree/status endpoint
+      // (never on the frontend redirect alone) — same genuine-confirmation
+      // point that already gates Cart.clear() just below.
+      if (order) {
+        window.dataLayer = window.dataLayer || [];
+        window.dataLayer.push({ ecommerce: null }); // clear previous ecommerce object
+        window.dataLayer.push({
+          event: "purchase",
+          ecommerce: {
+            transaction_id: order.id,
+            value: (order.our_price || 0) + (order.delivery_fee || 0),
+            currency: "INR",
+            items: [{
+              item_name: order.product_name,
+              price: order.our_price,
+              quantity: 1
+            }]
+          }
+        });
+      }
+
       Cart.clear(); // fires only from this genuinely-verified branch
     }
 
