@@ -164,10 +164,10 @@ async def push_service_worker():
 
 DEFAULT_OG_IMAGE = f"{SITE_URL}/static/images/favicon.svg"
 
-HOME_TITLE = "clovical — Curated Kids' Fashion from Local Boutiques"
+HOME_TITLE = "clovical — Curated Fashion from Local Boutiques"
 HOME_DESCRIPTION = (
     "clovical connects local boutique shops with online shoppers, offering "
-    "curated, quality kids' fashion for Boys & Girls, sourced from real "
+    "curated, quality fashion for Boys & Girls, sourced from real "
     "local sellers."
 )
 
