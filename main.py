@@ -201,12 +201,7 @@ app.include_router(analytics.router, prefix="/api/analytics")
 app.include_router(categories.router, prefix="/api/categories")
 app.include_router(shopkeeper_auth.router, prefix="/api/shopkeeper-auth")
 app.include_router(shopkeeper_panel.router, prefix="/api/shopkeeper")
-# NOTE: /api/requests (shopkeeper "request a product" feature used by
-# templates/shopkeeper/products.html and templates/admin/requests.html)
-# has no backend implementation yet — routers/products.py is currently
-# just a duplicate of routers/orders.py. Needs real route code before
-# re-mounting here, e.g.:
-# app.include_router(products.router, prefix="/api/requests")
+app.include_router(products.router, prefix="/api/requests")
 app.include_router(customer_auth.router, prefix="/api/customer-auth")
 app.include_router(payments.router, prefix="/api/payments/cashfree")
 app.include_router(notifications.router, prefix="/api/notifications")
