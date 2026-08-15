@@ -782,6 +782,30 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       }
     }
 
+    // Public (no-login) courier tracking page builders, keyed by shipping
+    // platform. Only NimbusPost is integrated today (see utils/nimbuspost.py),
+    // but this is kept as a lookup table — not inlined — so a future courier
+    // can be added as one more entry + a way to pick its key, without
+    // touching every call site that needs a tracking link.
+    //
+    // NOTE: `courier_name` on the order is the downstream carrier NimbusPost
+    // dispatches through (e.g. "Delhivery", "Ecom Express"), not a different
+    // shipping platform/integration — so it isn't the right signal for which
+    // *tracking page* to use. Presence of tracking_id (today, always written
+    // by the NimbusPost integration) is what selects the builder below.
+    const TRACKING_URL_BUILDERS = {
+      nimbuspost: (id) => `https://www.nimbuspost.com/track/${encodeURIComponent(id)}`,
+    };
+
+    // Returns a public tracking URL for an order, or null if it doesn't have
+    // a tracking ID yet (i.e. hasn't shipped).
+    function trackingUrlFor(o) {
+      if (!o.tracking_id) return null;
+      const platform = o.shipping_platform || "nimbuspost"; // only integration today
+      const build = TRACKING_URL_BUILDERS[platform] || TRACKING_URL_BUILDERS.nimbuspost;
+      return build(o.tracking_id);
+    }
+
     // Maps what's already stored on the order (status + NimbusPost fields
     // written at shipment-creation time) to a customer-friendly label —
     // no live courier API call, per the stored-data-only scope for this page.
@@ -802,10 +826,11 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       const paymentLabel = (o.payment_type || "—").toUpperCase();
       const paymentStatusOk = o.payment_status === "verified" || o.payment_status === "received";
 
-      const trackingLine = (o.status === "shipped" || o.status === "delivered") && o.tracking_id
+      const trackUrl = (o.status === "shipped" || o.status === "delivered") ? trackingUrlFor(o) : null;
+      const trackingLine = trackUrl
         ? `<div class="order-tracking-line">
              ${o.courier_name ? o.courier_name + " · " : ""}AWB ${o.tracking_id}
-             <a href="https://www.nimbuspost.com/track/${encodeURIComponent(o.tracking_id)}" target="_blank" rel="noopener">Track Shipment</a>
+             <a href="${trackUrl}" target="_blank" rel="noopener">Track Shipment</a>
            </div>`
         : "";
 
@@ -865,6 +890,20 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         refundNote = `<div class="alert" style="background:#FFF7E6;color:#8A5B00;border:1px solid #F5D98B;margin-top:10px">Cancelled — refund pending review by our team.</div>`;
       }
 
+      // Only shown once the order actually has a tracking ID (i.e. shipped) —
+      // no empty/placeholder section for orders still being prepared.
+      let trackingSection = "";
+      const detailTrackUrl = (o.status === "shipped" || o.status === "delivered") ? trackingUrlFor(o) : null;
+      if (detailTrackUrl) {
+        trackingSection = `
+          <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
+            <div style="font-size:0.85rem;line-height:1.9">
+              <div><strong>Tracking ID:</strong> ${o.courier_name ? o.courier_name + " · " : ""}${o.tracking_id}</div>
+            </div>
+            <a href="${detailTrackUrl}" target="_blank" rel="noopener" class="btn btn-dark btn-block" style="margin-top:10px;text-decoration:none;text-align:center;display:block">Track Your Order</a>
+          </div>`;
+      }
+
       let cancelSection = "";
       if (o.cancellable) {
         cancelSection = `
@@ -907,9 +946,9 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
           <div><strong>Payment:</strong> ${(o.payment_type || "—").toUpperCase()} · ${o.payment_status}</div>
           <div><strong>Order Date:</strong> ${orderDate}</div>
           <div><strong>Delivery Address:</strong> ${addressLines || "—"}</div>
-          ${(o.tracking_id) ? `<div><strong>Tracking:</strong> ${o.courier_name ? o.courier_name + " · " : ""}${o.tracking_id}</div>` : ""}
         </div>
         ${refundNote}
+        ${trackingSection}
         ${cancelSection}
         ${reviewSection}
       `;
