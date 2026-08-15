@@ -95,7 +95,12 @@ async def list_products(
         elif sort == "discount":
             query = query.not_.is_("mrp", "null").order("mrp", desc=True)
         else:
-            query = query.order("created_at", desc=True)
+            # Default/implicit ordering (no explicit sort, or the home page's
+            # sort=latest) — featured products first, newest-first within
+            # each group. This is the "Featured" view. Explicit user sort
+            # choices above (price/discount) are a deliberate override, so
+            # they intentionally don't get the featured bias mixed in.
+            query = query.order("featured", desc=True).order("created_at", desc=True)
 
         res = await run_query(query)
         data = res.data or []

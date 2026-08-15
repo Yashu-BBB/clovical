@@ -691,7 +691,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         <div class="section-header">
           <div>
             <div class="section-eyebrow">Girls Collection</div>
-            <h2 class="section-title" id="girls-title">New Arrivals</h2>
+            <h2 class="section-title" id="girls-title">Featured</h2>
           </div>
           <a href="/products?gender=Girls" class="btn btn-ghost btn-sm">View All</a>
         </div>
@@ -706,7 +706,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         <div class="section-header">
           <div>
             <div class="section-eyebrow">Boys Collection</div>
-            <h2 class="section-title" id="boys-title">New Arrivals</h2>
+            <h2 class="section-title" id="boys-title">Featured</h2>
           </div>
           <a href="/products?gender=Boys" class="btn btn-ghost btn-sm">View All</a>
         </div>
@@ -910,7 +910,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         if (category) url += `&category=${encodeURIComponent(category)}`;
         const products = await apiFetch(url);
         const titleEl = document.getElementById(`${gender.toLowerCase()}-title`);
-        if (titleEl) titleEl.textContent = category || 'New Arrivals';
+        if (titleEl) titleEl.textContent = category || 'Featured';
         if (!products.length) {
           grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;padding:48px 0"><svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><h3>No products yet</h3><p>Check back soon for new arrivals</p></div>`;
           return;
