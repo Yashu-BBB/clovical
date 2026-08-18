@@ -843,8 +843,8 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
           <div class="order-item">
             <img class="order-item-img" src="${o.product_image || '/static/images/placeholder.svg'}" alt="">
             <div class="order-item-info">
-              <div class="order-item-name">${o.product_name}</div>
-              <div class="order-item-meta">${o.size} · ${o.color}</div>
+              <div class="order-item-name">${escapeHtml(o.product_name)}</div>
+              <div class="order-item-meta">${escapeHtml(o.size)} · ${escapeHtml(o.color)}</div>
             </div>
             <div class="order-item-price">${formatPrice(total)}</div>
           </div>
@@ -919,7 +919,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
             <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
               <div style="font-size:0.82rem;color:var(--muted);margin-bottom:6px">Your review</div>
               <div style="color:#F5A623;font-size:0.95rem;margin-bottom:4px">${"★".repeat(o.review.rating)}${"☆".repeat(5 - o.review.rating)}</div>
-              ${o.review.review_text ? `<p style="font-size:0.85rem;color:var(--muted);margin:0">${escapeHtmlOrder(o.review.review_text)}</p>` : ""}
+              ${o.review.review_text ? `<p style="font-size:0.85rem;color:var(--muted);margin:0">${escapeHtml(o.review.review_text)}</p>` : ""}
             </div>`;
         } else {
           reviewSection = `
@@ -936,8 +936,8 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         <div style="display:flex;gap:14px;align-items:center;margin-bottom:16px">
           <img src="${o.product_image || '/static/images/placeholder.svg'}" style="width:64px;height:80px;object-fit:cover;border-radius:var(--radius-sm);flex-shrink:0">
           <div>
-            <div style="font-weight:600">${o.product_name}</div>
-            <div style="font-size:0.82rem;color:var(--muted)">Size: ${o.size} · Color: ${o.color}</div>
+            <div style="font-weight:600">${escapeHtml(o.product_name)}</div>
+            <div style="font-size:0.82rem;color:var(--muted)">Size: ${escapeHtml(o.size)} · Color: ${escapeHtml(o.color)}</div>
             <div style="font-weight:700;margin-top:4px">${formatPrice(total)}</div>
           </div>
         </div>
@@ -945,17 +945,13 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
           <div><strong>Status:</strong> <span class="badge badge-gold">${o.status}</span></div>
           <div><strong>Payment:</strong> ${(o.payment_type || "—").toUpperCase()} · ${o.payment_status}</div>
           <div><strong>Order Date:</strong> ${orderDate}</div>
-          <div><strong>Delivery Address:</strong> ${addressLines || "—"}</div>
+          <div><strong>Delivery Address:</strong> ${escapeHtml(addressLines) || "—"}</div>
         </div>
         ${refundNote}
         ${trackingSection}
         ${cancelSection}
         ${reviewSection}
       `;
-    }
-
-    function escapeHtmlOrder(str) {
-      return String(str ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
 
     async function cancelOrder(orderId) {

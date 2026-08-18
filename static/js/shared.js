@@ -15,6 +15,21 @@ const Icons = {
   truck:    `<svg viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"><rect x="1" y="3" width="15" height="13"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>`,
 };
 
+// ─── HTML escaping ──────────────────────────────────────────────────────────
+// Use this on ANY user-supplied value (customer name, address, review text,
+// product name, etc.) before it goes into a template string that's assigned
+// to innerHTML. Never interpolate user data into innerHTML unescaped — it
+// executes as live HTML/JS in whoever's browser renders it, including the
+// admin dashboard.
+function escapeHtml(str) {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 // ─── Toast ─────────────────────────────────────────────────────────────────
 function showToast(message, type = "success") {
   let container = document.getElementById("toast-container");
@@ -47,7 +62,7 @@ async function apiFetch(url, options = {}) {
 // ─── Cart ─────────────────────────────────────────────────────────────────
 const Cart = {
   get() { return JSON.parse(localStorage.getItem("clovical_cart") || "[]"); },
-  save(items) { localStorage.setItem("clovical_cart", JSON.stringify(items)); updateCartBadge(); },
+  save(items) { localStorage.setItem("clovical_cart", JSON.stringify(items)); updateCartBadge(); CartSync.schedulePush(); },
   add(product, size, color) {
     const items = this.get();
     const existing = items.find(i => i.id === product.id && i.size === size && i.color === color);
@@ -87,7 +102,7 @@ const Cart = {
 // ─── Wishlist ─────────────────────────────────────────────────────────────
 const Wishlist = {
   get() { return JSON.parse(localStorage.getItem("clovical_wishlist") || "[]"); },
-  save(items) { localStorage.setItem("clovical_wishlist", JSON.stringify(items)); updateWishlistBadge(); },
+  save(items) { localStorage.setItem("clovical_wishlist", JSON.stringify(items)); updateWishlistBadge(); CartSync.schedulePush(); },
   toggle(product) {
     const items = this.get();
     const idx = items.findIndex(i => i.id === product.id);
@@ -104,6 +119,81 @@ const Wishlist = {
   has(id) { return this.get().some(i => i.id === id); },
   count() { return this.get().length; }
 };
+
+// ─── Cart/Wishlist server sync (logged-in customers only) ─────────────────
+// Cart/Wishlist above always write to localStorage first — that never
+// changes, so guests and pre-sync page loads work exactly as before. For a
+// logged-in customer, CartSync additionally: (1) once per page load, merges
+// whatever's already saved on the server with whatever's in this browser's
+// localStorage, so switching devices or clearing site data doesn't lose a
+// cart; (2) after every local Cart/Wishlist change, pushes the merged state
+// back up (debounced, so rapid qty changes don't spam the API).
+const CartSync = {
+  _loggedIn: null,        // null = not checked yet, true/false once known
+  _pushTimer: null,
+
+  async init() {
+    try {
+      const me = await apiFetch("/api/customer-auth/me");
+      this._loggedIn = !!me.logged_in;
+      if (!this._loggedIn) return;
+
+      const server = await apiFetch("/api/cart/mine");
+      const mergedCart = this._mergeCart(Cart.get(), server.cart || []);
+      const mergedWishlist = this._mergeWishlist(Wishlist.get(), server.wishlist || []);
+      Cart.save(mergedCart);
+      Wishlist.save(mergedWishlist);
+      // Push the merged result back so the server has anything that was
+      // only local (e.g. added while offline/guest, then logged in).
+      this._pushNow();
+    } catch (e) {
+      // Not logged in, or the check failed — Cart/Wishlist already work
+      // fine from localStorage alone, so there's nothing else to do here.
+      this._loggedIn = this._loggedIn ?? false;
+    }
+  },
+
+  // Local qty wins ties (favors whatever the customer just did in this
+  // browser); items only present on one side are unioned in.
+  _mergeCart(local, server) {
+    const merged = local.map(i => ({ ...i }));
+    for (const sItem of server) {
+      const match = merged.find(i => i.id === sItem.id && i.size === sItem.size && i.color === sItem.color);
+      if (!match) merged.push({ ...sItem });
+    }
+    return merged;
+  },
+
+  _mergeWishlist(local, server) {
+    const merged = local.map(i => ({ ...i }));
+    for (const sItem of server) {
+      if (!merged.some(i => i.id === sItem.id)) merged.push({ ...sItem });
+    }
+    return merged;
+  },
+
+  // Called by Cart.save()/Wishlist.save() on every change. No-ops for
+  // guests (this._loggedIn is false/null until init() resolves).
+  schedulePush() {
+    if (!this._loggedIn) return;
+    clearTimeout(this._pushTimer);
+    this._pushTimer = setTimeout(() => this._pushNow(), 800);
+  },
+
+  async _pushNow() {
+    try {
+      await apiFetch("/api/cart/mine", {
+        method: "PUT",
+        body: JSON.stringify({ cart: Cart.get(), wishlist: Wishlist.get() }),
+      });
+    } catch (e) {
+      // Best-effort — localStorage already has the source of truth for
+      // this browser, so a failed sync just means it retries next change.
+    }
+  },
+};
+
+document.addEventListener("DOMContentLoaded", () => CartSync.init());
 
 function updateCartBadge() {
   const badge = document.getElementById("cart-badge");

@@ -28,6 +28,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 def create_token(username: str) -> str:
     payload = {
         "sub": username,
+        "role": "admin",
         "iat": time.time(),
         "exp": time.time() + SESSION_TTL
     }
@@ -42,10 +43,19 @@ def decode_token(token: str) -> dict | None:
         return None
 
 def get_admin_from_request(request: Request) -> dict | None:
+    """SECURITY: every JWT in this app (admin/shopkeeper/customer) is signed
+    with the same SECRET_KEY, so decode success alone does not prove a token
+    was issued by the admin login — a valid shopkeeper_token or customer_token
+    would decode just as successfully. The role check below is required, not
+    optional; it's the same check get_shopkeeper_from_request/
+    get_customer_from_request already do for their own cookies."""
     token = request.cookies.get("admin_token")
     if not token:
         return None
-    return decode_token(token)
+    payload = decode_token(token)
+    if not payload or payload.get("role") != "admin":
+        return None
+    return payload
 
 def require_admin(request: Request) -> dict:
     admin = get_admin_from_request(request)

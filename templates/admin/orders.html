@@ -172,21 +172,21 @@ async function loadOrders() {
         <td style="font-family:monospace;font-size:0.75rem">
           <div class="order-code-cell">
             ${o.product_image
-              ? `<img class="order-thumb" src="${o.product_image}" alt="${o.product_name || ''}">`
+              ? `<img class="order-thumb" src="${escapeHtml(o.product_image)}" alt="${escapeHtml(o.product_name || '')}">`
               : `<span class="order-thumb-placeholder">📦</span>`}
-            <span>${o.id.slice(0,8)}...<br><span style="color:var(--muted)">${o.shopkeeper_code||''}</span></span>
+            <span>${o.id.slice(0,8)}...<br><span style="color:var(--muted)">${escapeHtml(o.shopkeeper_code||'')}</span></span>
           </div>
         </td>
         <td>
-          <strong>${o.customer_name}</strong><br>
-          <a href="https://wa.me/91${o.customer_phone}" target="_blank" style="color:var(--primary);font-size:0.8rem">${o.customer_phone}</a><br>
-          <span style="color:var(--muted);font-size:0.75rem">${o.customer_city} — <span class="pincode-tag">${o.customer_pincode || '—'}</span></span>
+          <strong>${escapeHtml(o.customer_name)}</strong><br>
+          <a href="https://wa.me/91${encodeURIComponent(o.customer_phone||'')}" target="_blank" style="color:var(--primary);font-size:0.8rem">${escapeHtml(o.customer_phone)}</a><br>
+          <span style="color:var(--muted);font-size:0.75rem">${escapeHtml(o.customer_city)} — <span class="pincode-tag">${escapeHtml(o.customer_pincode || '—')}</span></span>
         </td>
         <td>
-          <strong>${o.product_name}</strong><br>
-          <span style="color:var(--muted);font-size:0.8rem">Size: ${o.size} · ${o.color}</span>
-          ${o.tracking_id ? `<br><span style="font-size:0.75rem">📦 ${o.tracking_id}</span>` : ''}
-          ${o.courier_name ? `<br><span style="font-size:0.7rem;color:var(--muted)">${o.courier_name}</span>` : ''}
+          <strong>${escapeHtml(o.product_name)}</strong><br>
+          <span style="color:var(--muted);font-size:0.8rem">Size: ${escapeHtml(o.size)} · ${escapeHtml(o.color)}</span>
+          ${o.tracking_id ? `<br><span style="font-size:0.75rem">📦 ${escapeHtml(o.tracking_id)}</span>` : ''}
+          ${o.courier_name ? `<br><span style="font-size:0.7rem;color:var(--muted)">${escapeHtml(o.courier_name)}</span>` : ''}
         </td>
         <td><strong>${formatPrice(o.our_price)}</strong></td>
         <td style="color:var(--success);font-weight:700">+${formatPrice(o.profit)}</td>
@@ -205,7 +205,7 @@ async function loadOrders() {
         <td style="font-size:0.8rem;color:var(--muted)">${new Date(o.created_at).toLocaleDateString('en-IN')}</td>
         <td>
           <div class="ship-actions">
-            <button class="btn btn-outline btn-sm" onclick='openUpdate(${JSON.stringify(o)})'>Update</button>
+            <button class="btn btn-outline btn-sm" onclick='openUpdate(${escapeHtml(JSON.stringify(o))})'>Update</button>
             <button class="btn btn-outline btn-sm" onclick="downloadOrderPDF('${o.id}', this)">📄 PDF</button>
             ${o.package_pdf_status === 'ready' ? `<button class="btn btn-outline btn-sm" onclick="downloadPackagePDF('${o.id}', this)">📦 Package PDF</button>` : ''}
             ${!o.nimbuspost_awb
@@ -237,11 +237,11 @@ function openUpdate(order) {
   document.getElementById("modal-alert").innerHTML = "";
   document.getElementById("order-info").innerHTML = `
     <div style="display:flex;gap:10px;align-items:flex-start">
-      ${order.product_image ? `<img src="${order.product_image}" alt="${order.product_name || ''}" style="width:52px;height:52px;border-radius:8px;object-fit:cover;border:1px solid var(--border);flex-shrink:0">` : ''}
+      ${order.product_image ? `<img src="${escapeHtml(order.product_image)}" alt="${escapeHtml(order.product_name || '')}" style="width:52px;height:52px;border-radius:8px;object-fit:cover;border:1px solid var(--border);flex-shrink:0">` : ''}
       <div>
-        <strong>${order.customer_name}</strong> — ${order.product_name}<br>
-        Size: ${order.size} · Color: ${order.color} · Amount: <strong>${formatPrice(order.our_price)}</strong><br>
-        <span style="color:var(--muted)">Ship to pincode: <span class="pincode-tag">${order.customer_pincode || '—'}</span></span>
+        <strong>${escapeHtml(order.customer_name)}</strong> — ${escapeHtml(order.product_name)}<br>
+        Size: ${escapeHtml(order.size)} · Color: ${escapeHtml(order.color)} · Amount: <strong>${formatPrice(order.our_price)}</strong><br>
+        <span style="color:var(--muted)">Ship to pincode: <span class="pincode-tag">${escapeHtml(order.customer_pincode || '—')}</span></span>
       </div>
     </div>
   `;

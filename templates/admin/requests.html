@@ -281,15 +281,15 @@ async function loadRequests() {
       const thumb = r.shopkeeper_image_front_thumb || r.shopkeeper_image_front || (r.admin_images && r.admin_images[0]);
       return `
       <tr>
-        <td>${thumb ? `<img class="req-thumb" src="${thumb}">` : '<div class="req-thumb-placeholder">—</div>'}</td>
-        <td><strong>${r.name}</strong><br><span style="font-size:0.78rem;color:var(--muted)">${r.category || '—'} · ${r.gender || '—'}</span></td>
+        <td>${thumb ? `<img class="req-thumb" src="${escapeHtml(thumb)}">` : '<div class="req-thumb-placeholder">—</div>'}</td>
+        <td><strong>${escapeHtml(r.name)}</strong><br><span style="font-size:0.78rem;color:var(--muted)">${escapeHtml(r.category || '—')} · ${escapeHtml(r.gender || '—')}</span></td>
         <td>#${String(r.shopkeeper_id).padStart(3,'0')}</td>
         <td>₹${Number(r.shopkeeper_price).toLocaleString('en-IN')}</td>
         <td>${r.our_price != null ? '₹' + Number(r.our_price).toLocaleString('en-IN') : '<span style="color:var(--muted)">Not set</span>'}</td>
         <td>${r.mrp != null ? '₹' + Number(r.mrp).toLocaleString('en-IN') : '—'}</td>
         <td>${(r.admin_images && r.admin_images.length) ? `<span class="badge badge-success">${r.admin_images.length} attached</span>` : '<span class="badge badge-muted">Pending</span>'}</td>
-        <td><span class="badge badge-${r.status === 'accepted' ? 'success' : r.status === 'rejected' ? 'danger' : 'gold'}">${r.status}</span></td>
-        <td>${r.status === 'pending' ? `<button class="btn btn-outline btn-sm" onclick='openReview(${JSON.stringify(r)})'>Review</button>` : '—'}</td>
+        <td><span class="badge badge-${r.status === 'accepted' ? 'success' : r.status === 'rejected' ? 'danger' : 'gold'}">${escapeHtml(r.status)}</span></td>
+        <td>${r.status === 'pending' ? `<button class="btn btn-outline btn-sm" onclick='openReview(${escapeHtml(JSON.stringify(r))})'>Review</button>` : '—'}</td>
       </tr>
     `;
     }).join('');
@@ -359,10 +359,6 @@ function openReview(r) {
   loadExistingImages(r.admin_images || []);
 
   document.getElementById('review-modal').classList.add('open');
-}
-
-function escapeHtml(str) {
-  return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function closeModal() {

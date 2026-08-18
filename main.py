@@ -17,9 +17,10 @@ from slowapi.errors import RateLimitExceeded
 import redis.asyncio as aioredis
 import os
 
-from routers import auth, products, orders, shopkeepers, admin, analytics, public, categories, shopkeeper_auth, shopkeeper_panel, requests as product_requests, customer_auth, payments, notifications
+from routers import auth, products, orders, shopkeepers, admin, analytics, public, categories, shopkeeper_auth, shopkeeper_panel, product_requests, customer_auth, payments, notifications, cart
 from utils.db import supabase_admin, run_query, run_blocking
 from utils.cache import init_redis, close_redis
+from utils.login_throttle import is_blocked as login_ip_blocked
 
 # ─── Logging ───────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -40,9 +41,10 @@ limiter = Limiter(key_func=get_remote_address)
 # ─── Visitor IP hash salt (prevents SHA256 rainbow-table lookups on ip_hash) ─
 HASH_SALT = os.getenv("SECRET_KEY", "salt")[:16]
 
-# ─── Blocked IPs (in-memory, reset on restart) ────────────────────────────
-blocked_ips: dict[str, float] = {}
-failed_attempts: dict[str, int] = {}
+# ─── Blocked IPs ───────────────────────────────────────────────────────────
+# Moved to utils/login_throttle.py (Redis-backed, in-memory fallback) so the
+# block-list survives restarts and is shared across instances — see that
+# module's docstring for why.
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -109,10 +111,17 @@ async def health_check():
     return status
 
 ALLOWED_ORIGINS = [
+    "https://www.clovical.in",
+    "https://clovical.in",
     "https://clovical.up.railway.app",
     "http://localhost:8000",
     "http://127.0.0.1:8000",
 ]
+# Allow an extra origin (e.g. a staging URL) to be added per-deploy without a
+# code change.
+_extra_origin = os.getenv("EXTRA_ALLOWED_ORIGIN")
+if _extra_origin and _extra_origin not in ALLOWED_ORIGINS:
+    ALLOWED_ORIGINS.append(_extra_origin)
 
 app.add_middleware(
     CORSMiddleware,
@@ -128,14 +137,9 @@ async def track_and_protect(request: Request, call_next):
     client_ip = request.headers.get("CF-Connecting-IP") or get_remote_address(request)
     ip_hash = hashlib.sha256(f"{HASH_SALT}{client_ip}".encode()).hexdigest()
 
-    # Block IPs
-    if client_ip in blocked_ips:
-        if time.time() - blocked_ips[client_ip] < 900:  # 15 min block
-            return JSONResponse({"detail": "Too many failed attempts"}, status_code=429)
-        else:
-            del blocked_ips[client_ip]
-            if client_ip in failed_attempts:
-                del failed_attempts[client_ip]
+    # Block IPs (Redis-backed — see utils/login_throttle.py)
+    if await login_ip_blocked(client_ip):
+        return JSONResponse({"detail": "Too many failed attempts"}, status_code=429)
 
     # Log visitors (only customer pages, not static/api/admin).
     # Fire-and-forget: this is best-effort analytics, not something the
@@ -193,7 +197,7 @@ templates = Jinja2Templates(directory="templates")
 # ─── Routers ──────────────────────────────────────────────────────────────
 app.include_router(public.router)
 app.include_router(auth.router, prefix="/api/auth")
-app.include_router(product_requests.router, prefix="/api/products")
+app.include_router(product_requests.router, prefix="/api/requests")
 app.include_router(orders.router, prefix="/api/orders")
 app.include_router(shopkeepers.router, prefix="/api/shopkeepers")
 app.include_router(admin.router, prefix="/api/admin")
@@ -201,11 +205,8 @@ app.include_router(analytics.router, prefix="/api/analytics")
 app.include_router(categories.router, prefix="/api/categories")
 app.include_router(shopkeeper_auth.router, prefix="/api/shopkeeper-auth")
 app.include_router(shopkeeper_panel.router, prefix="/api/shopkeeper")
-app.include_router(products.router, prefix="/api/requests")
+app.include_router(products.router, prefix="/api/products")
 app.include_router(customer_auth.router, prefix="/api/customer-auth")
 app.include_router(payments.router, prefix="/api/payments/cashfree")
 app.include_router(notifications.router, prefix="/api/notifications")
-
-# Expose blocked_ips and failed_attempts globally for auth router
-app.state.blocked_ips = blocked_ips
-app.state.failed_attempts = failed_attempts
+app.include_router(cart.router, prefix="/api/cart")

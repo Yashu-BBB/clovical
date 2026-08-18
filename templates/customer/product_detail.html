@@ -1111,10 +1111,6 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       }
     }
 
-    function escapeHtml(str) {
-      return String(str ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    }
-
     function openSizeGuide() {
       let sizeChart = product?.size_chart;
       if (typeof sizeChart === 'string' && sizeChart) {
@@ -1152,17 +1148,13 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         document.getElementById("reviews-list").innerHTML = reviews.map(r => `
           <div style="border:1px solid #E8E8E8;border-radius:var(--radius-lg);padding:18px 20px">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-              <strong style="font-size:0.9rem">${(r.customer_name || "Verified Buyer").split(" ")[0]}</strong>
+              <strong style="font-size:0.9rem">${escapeHtml((r.customer_name || "Verified Buyer").split(" ")[0])}</strong>
               <span style="color:#F5A623;font-size:0.85rem">${"★".repeat(r.rating)}${"☆".repeat(5 - r.rating)}</span>
             </div>
-            ${r.review_text ? `<p style="font-size:0.85rem;color:var(--muted);line-height:1.6;margin:0">${escapeHtmlReview(r.review_text)}</p>` : ""}
+            ${r.review_text ? `<p style="font-size:0.85rem;color:var(--muted);line-height:1.6;margin:0">${escapeHtml(r.review_text)}</p>` : ""}
           </div>
         `).join("");
       } catch(e) {}
-    }
-
-    function escapeHtmlReview(str) {
-      return String(str ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
 
     loadProduct();

@@ -83,10 +83,10 @@ async function loadOrders() {
     body.innerHTML = orders.map(o => `
       <tr>
         <td style="display:flex;align-items:center;gap:8px">
-          ${o.product_image ? `<img class="order-thumb" src="${o.product_image}">` : '<div class="order-thumb-placeholder">—</div>'}
-          <strong>${o.product_name}</strong>
+          ${o.product_image ? `<img class="order-thumb" src="${escapeHtml(o.product_image)}">` : '<div class="order-thumb-placeholder">—</div>'}
+          <strong>${escapeHtml(o.product_name)}</strong>
         </td>
-        <td>${o.size} / ${o.color}</td>
+        <td>${escapeHtml(o.size)} / ${escapeHtml(o.color)}</td>
         <td><strong>₹${Number(o.shopkeeper_price).toLocaleString('en-IN')}</strong></td>
         <td>${(o.payment_type || '—').toUpperCase()} · <span class="badge badge-${o.payment_status === 'received' || o.payment_status === 'verified' ? 'success' : 'muted'}">${o.payment_status}</span></td>
         <td><span class="badge badge-gold">${o.status}</span></td>

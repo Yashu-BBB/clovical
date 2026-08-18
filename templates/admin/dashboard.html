@@ -194,8 +194,8 @@ async function loadDashboard() {
       body.innerHTML = data.recent_orders.map(o => `
         <tr>
           <td style="font-family:monospace;font-size:0.8rem">${o.id.slice(0,8)}...</td>
-          <td><strong>${o.customer_name}</strong><br><span style="color:var(--muted);font-size:0.8rem">${o.customer_phone}</span></td>
-          <td>${o.product_name}<br><span style="color:var(--muted);font-size:0.8rem">${o.size} · ${o.color}</span></td>
+          <td><strong>${escapeHtml(o.customer_name)}</strong><br><span style="color:var(--muted);font-size:0.8rem">${escapeHtml(o.customer_phone)}</span></td>
+          <td>${escapeHtml(o.product_name)}<br><span style="color:var(--muted);font-size:0.8rem">${escapeHtml(o.size)} · ${escapeHtml(o.color)}</span></td>
           <td><strong>${formatPrice(o.our_price)}</strong><br><span style="color:var(--success);font-size:0.8rem">+${formatPrice(o.profit)}</span></td>
           <td><span class="badge badge-${o.payment_type === 'upi' ? 'primary' : 'warning'}">${o.payment_type?.toUpperCase()}</span></td>
           <td><span class="badge badge-${STATUS_COLORS[o.status] || 'muted'}">${o.status}</span></td>
@@ -212,8 +212,8 @@ async function loadDashboard() {
       lowStockEl.innerHTML = '<p style="color:var(--success)">✅ All products in stock</p>';
     } else {
       lowStockEl.innerHTML = [
-        ...outEl.map(p => `<div style="display:flex;justify-content:space-between;padding:8px 12px;background:#FEE2E2;border-radius:8px;margin-bottom:6px"><span>${p.name}</span><span class="badge badge-danger">OUT</span></div>`),
-        ...lowEl.map(p => `<div style="display:flex;justify-content:space-between;padding:8px 12px;background:#FEF3C7;border-radius:8px;margin-bottom:6px"><span>${p.name}</span><span class="badge badge-warning">${p.stock} left</span></div>`)
+        ...outEl.map(p => `<div style="display:flex;justify-content:space-between;padding:8px 12px;background:#FEE2E2;border-radius:8px;margin-bottom:6px"><span>${escapeHtml(p.name)}</span><span class="badge badge-danger">OUT</span></div>`),
+        ...lowEl.map(p => `<div style="display:flex;justify-content:space-between;padding:8px 12px;background:#FEF3C7;border-radius:8px;margin-bottom:6px"><span>${escapeHtml(p.name)}</span><span class="badge badge-warning">${p.stock} left</span></div>`)
       ].join("");
     }
 
@@ -224,7 +224,7 @@ async function loadDashboard() {
     } else {
       refundEl.innerHTML = data.refund_pending.map(o => `
         <div style="padding:8px 12px;background:#FEF3C7;border-radius:8px;margin-bottom:6px;display:flex;justify-content:space-between">
-          <span>${o.customer_name} — ${o.product_name}</span>
+          <span>${escapeHtml(o.customer_name)} — ${escapeHtml(o.product_name)}</span>
           <strong>${formatPrice(o.our_price)}</strong>
         </div>
       `).join("");

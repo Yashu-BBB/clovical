@@ -1,16 +1,13 @@
-import time
 import logging
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from utils.db import supabase_admin, run_query
 from utils.auth_utils import verify_password, create_token
+from utils.login_throttle import is_blocked, record_failure, clear as clear_throttle
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-MAX_ATTEMPTS = 3
-BLOCK_DURATION = 900  # 15 minutes
 
 
 class LoginRequest(BaseModel):
@@ -21,16 +18,10 @@ class LoginRequest(BaseModel):
 @router.post("/login")
 async def login(req: LoginRequest, request: Request):
     client_ip = request.headers.get("CF-Connecting-IP") or request.client.host
-    app_state = request.app.state
 
-    # Check if IP is blocked
-    if client_ip in app_state.blocked_ips:
-        if time.time() - app_state.blocked_ips[client_ip] < BLOCK_DURATION:
-            logger.warning(f"Admin login blocked IP: {client_ip}")
-            raise HTTPException(status_code=429, detail="Too many failed attempts. Try later.")
-        else:
-            del app_state.blocked_ips[client_ip]
-            app_state.failed_attempts.pop(client_ip, None)
+    if await is_blocked(client_ip):
+        logger.warning(f"Admin login blocked IP: {client_ip}")
+        raise HTTPException(status_code=429, detail="Too many failed attempts. Try later.")
 
     try:
         res = await run_query(supabase_admin.table("admins").select("*").eq("username", req.username).single())
@@ -38,25 +29,18 @@ async def login(req: LoginRequest, request: Request):
         res = None
 
     if not res or not res.data:
-        # Track failed attempt
-        app_state.failed_attempts[client_ip] = app_state.failed_attempts.get(client_ip, 0) + 1
-        if app_state.failed_attempts[client_ip] >= MAX_ATTEMPTS:
-            app_state.blocked_ips[client_ip] = time.time()
-            logger.warning(f"Admin login: IP {client_ip} blocked after {MAX_ATTEMPTS} failed attempts")
+        await record_failure(client_ip, "Admin")
         logger.warning(f"Admin login failed: username={req.username}, IP={client_ip}")
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     admin = res.data
     if not verify_password(req.password, admin["password"]):
-        app_state.failed_attempts[client_ip] = app_state.failed_attempts.get(client_ip, 0) + 1
-        if app_state.failed_attempts[client_ip] >= MAX_ATTEMPTS:
-            app_state.blocked_ips[client_ip] = time.time()
-            logger.warning(f"Admin login: IP {client_ip} blocked")
+        await record_failure(client_ip, "Admin")
         logger.warning(f"Admin login failed: username={req.username}, IP={client_ip}")
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     # Clear failed attempts on success
-    app_state.failed_attempts.pop(client_ip, None)
+    await clear_throttle(client_ip)
     logger.info(f"Admin logged in: {req.username}")
     token = create_token(req.username)
 
