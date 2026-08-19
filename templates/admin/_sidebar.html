@@ -50,6 +50,14 @@
 </aside>
 
 <style>
+  /* Sidebar text color override — was white-on-white/invisible */
+  #sidebar, #sidebar .sidebar-logo h2, #sidebar .sidebar-logo p,
+  #sidebar .nav-item, #sidebar .nav-item .icon, #sidebar .logout-btn {
+    color: #1a1a1a !important;
+  }
+  #sidebar .nav-item:hover, #sidebar .nav-item.active, #sidebar .logout-btn:hover {
+    color: #1a1a1a !important;
+  }
   .notif-bell-wrap { position: relative; flex-shrink: 0; }
   .notif-bell-btn {
     position: relative; background: rgba(255,255,255,.12); border: none; border-radius: 8px;
