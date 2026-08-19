@@ -345,6 +345,30 @@ async def add_product(
             raise HTTPException(status_code=404, detail="Shopkeeper not found")
         shopkeeper_code = f"#{sk.data['id']:03d}"
 
+        # `category` is matched by exact string everywhere it's used (the
+        # storefront filter, the admin edit-product dropdown's pre-select,
+        # etc.), so untrimmed whitespace here silently creates a product
+        # that doesn't match any category option on future edits.
+        category = category.strip() if category else category
+
+        # Guard against accidental duplicate products (e.g. a double form
+        # submission) — same name + gender + category, case-insensitively,
+        # is almost certainly the same product being added twice rather
+        # than an intentional second listing, and two visually-identical
+        # rows in the admin table make it look like editing one of them
+        # "does nothing" (you're actually looking at its untouched twin).
+        existing = await run_query(
+            supabase_admin.table("products").select("id,name").eq("gender", gender)
+        )
+        norm_name = name.strip().casefold()
+        for p in (existing.data or []):
+            if (p.get("name") or "").strip().casefold() == norm_name:
+                logger.warning(
+                    f"Possible duplicate product: '{name}' ({gender}) already exists as {p['id']} "
+                    f"— proceeding with new insert anyway, but flagging for review."
+                )
+                break
+
         # Upload each image (max 6) to Supabase storage
         image_urls = []
         valid_images = [img for img in images if img and img.filename]
@@ -447,7 +471,12 @@ async def edit_product(
         # "clear the category" action — never let that silently wipe out a
         # product's existing category.
         if category is not None and category.strip():
-            updates["category"] = category
+            # Store the trimmed value — category is matched by exact string
+            # everywhere it's read (storefront filters, this same edit
+            # modal's dropdown pre-select on the *next* edit), so saving an
+            # untrimmed "Hoodie " here would make this product silently stop
+            # matching the "Hoodie" option next time the modal opens.
+            updates["category"] = category.strip()
         if gender is not None: updates["gender"] = gender
         if fabric is not None: updates["fabric"] = fabric or None
         if mrp is not None: updates["mrp"] = mrp if mrp > 0 else None
@@ -522,7 +551,17 @@ async def edit_product(
         await cache_clear_pattern("products:*")
         await two_layer_clear_pattern("products:filter-options:")
         mem_clear_pattern("product:")
-        logger.info(f"Product edited: {product_id} by admin {admin['sub']}")
+        # Logs which fields were actually sent AND whether the update
+        # matched a row, so a future "my edit didn't take" report can be
+        # confirmed/ruled out from the logs alone: an empty `updates` dict
+        # means the form sent nothing to change; empty `res.data` with a
+        # non-empty `updates` means the PUT fired correctly but `.eq("id",
+        # product_id)` matched zero rows (e.g. the id in the edit modal no
+        # longer exists — a stale row loaded before a delete elsewhere).
+        logger.info(
+            f"Product edited: {product_id} by admin {admin['sub']}, "
+            f"fields={list(updates.keys())}, matched_row={bool(res.data)}"
+        )
         updated = res.data[0] if res.data else {}
         if before_stock:
             await check_out_of_stock(

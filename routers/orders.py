@@ -96,6 +96,64 @@ async def public_delivery_fee():
     return result
 
 
+async def _restore_order_stock(order: dict) -> bool:
+    """
+    Reverses the per-unit stock decrement create_order() made when this
+    order was placed: +1 to the product's overall stock, and +1 to the
+    order's specific size/colour entry in size_stock/color_stock if that
+    variant is tracked (mirrors the decrement logic in create_order()
+    exactly, just in the opposite direction).
+
+    Callers (cancel_order, update_order, admin_delete_order) are
+    responsible for checking order.get("stock_restored") before calling
+    this and for persisting stock_restored=True on the order row
+    afterwards — this function only touches the products table, so a
+    single restoration never happens twice for the same order regardless
+    of which of those three paths triggers it first.
+    """
+    product_id = order.get("product_id")
+    if not product_id:
+        logger.warning(f"Order {order.get('id')} has no product_id — skipping stock restoration")
+        return False
+
+    try:
+        prod_res = await run_query(supabase_admin.table("products").select("*").eq("id", product_id).single())
+        prod = prod_res.data
+        if not prod:
+            logger.warning(f"Product {product_id} no longer exists — skipping stock restoration for order {order.get('id')}")
+            return False
+
+        stock_update = {"stock": (prod.get("stock") or 0) + 1}
+
+        size_stock_map = prod.get("size_stock") or {}
+        order_size = order.get("size")
+        if order_size in size_stock_map and size_stock_map[order_size] is not None:
+            updated_size_map = dict(size_stock_map)
+            updated_size_map[order_size] = updated_size_map[order_size] + 1
+            stock_update["size_stock"] = updated_size_map
+
+        color_stock_map = prod.get("color_stock") or {}
+        order_color = order.get("color")
+        if order_color in color_stock_map and color_stock_map[order_color] is not None:
+            updated_color_map = dict(color_stock_map)
+            updated_color_map[order_color] = updated_color_map[order_color] + 1
+            stock_update["color_stock"] = updated_color_map
+
+        await run_query(supabase_admin.table("products").update(stock_update).eq("id", product_id))
+
+        # Same cache invalidation as every other stock-changing path in
+        # this file (create_order's decrement, etc.) so the storefront
+        # doesn't keep serving a stale "out of stock" snapshot.
+        mem_clear_pattern("product:")
+        await cache_clear_pattern("products:*")
+
+        logger.info(f"Stock restored for order {order.get('id')} (product {product_id}, size={order_size}, color={order_color})")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to restore stock for order {order.get('id')} (product {product_id}): {e}", exc_info=True)
+        return False
+
+
 async def _mark_package_pdf_status(order_id: str, status: str):
     """
     Records the shopkeeper package PDF's state on the order. `status` is one
@@ -728,6 +786,14 @@ async def cancel_order(order_id: str, request: Request, customer=Depends(require
         if payment_captured:
             updates["refund_status"] = "pending"
 
+        # Restore the stock that was decremented when this order was placed —
+        # guarded by stock_restored so a cancel that somehow runs twice (or
+        # runs after some other path already restored it) never double-credits
+        # the product's stock.
+        if not order.get("stock_restored"):
+            if await _restore_order_stock(order):
+                updates["stock_restored"] = True
+
         await run_query(supabase_admin.table("orders").update(updates).eq("id", order_id))
         logger.info(f"Order {order_id} cancelled by customer {customer['sub']} (refund_pending={payment_captured})")
 
@@ -870,6 +936,15 @@ async def update_order(order_id: str, update: StatusUpdate, admin=Depends(requir
         if update.refund_status:
             updates["refund_status"] = update.refund_status
 
+        # Admin setting the status to "cancelled" here is functionally the
+        # same reversal as the customer's own cancel_order() — restore the
+        # stock decremented at order creation, guarded by stock_restored so
+        # an order already cancelled (whether via this endpoint or the
+        # customer-facing one) never has its stock restored a second time.
+        if update.status == "cancelled" and order.get("status") != "cancelled" and not order.get("stock_restored"):
+            if await _restore_order_stock(order):
+                updates["stock_restored"] = True
+
         await run_query(supabase_admin.table("orders").update(updates).eq("id", order_id))
         logger.info(f"Order status updated: {order_id}, {order['status']} → {update.status}")
 
@@ -986,9 +1061,21 @@ async def admin_delete_order(order_id: str, admin=Depends(require_admin)):
     from the admin's own management view.
     """
     try:
-        existing = await run_query(supabase_admin.table("orders").select("id").eq("id", order_id).single())
+        existing = await run_query(supabase_admin.table("orders").select("*").eq("id", order_id).single())
         if not existing.data:
             raise HTTPException(status_code=404, detail="Order not found")
+        order = existing.data
+
+        # An order being permanently deleted here may never have gone
+        # through cancel_order()/update_order()'s "cancelled" path (e.g. an
+        # admin deleting a stray/duplicate order outright), so its stock was
+        # never restored — restore it now. stock_restored guards the case
+        # this fix explicitly needs to avoid: an order cancelled first
+        # (which already restored stock) and then deleted, which must not
+        # restore it a second time.
+        if not order.get("stock_restored"):
+            await _restore_order_stock(order)
+
         await run_query(supabase_admin.table("orders").delete().eq("id", order_id))
         await cache_delete("admin:dashboard")
         await cache_delete("analytics:overview")

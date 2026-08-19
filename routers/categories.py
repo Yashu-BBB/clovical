@@ -26,6 +26,30 @@ class CategoryUpdate(BaseModel):
     sort_order: int | None = None
 
 
+async def _find_similar_category(name: str, exclude_id: int | None = None) -> dict | None:
+    """
+    Catches near-duplicate categories the DB's UNIQUE(name) constraint
+    can't: that constraint is an exact, case-sensitive string match, so
+    "Hoodie" / "Hoodie " / "hoodie" / "HOODIE" are all distinct rows as
+    far as Postgres is concerned even though they're the same category to
+    an admin (and to every exact-string category match elsewhere in the
+    app — the storefront filters, the admin edit-product category
+    dropdown's pre-select, etc.). Compares trimmed + casefolded names so
+    add_category()/update_category() below can reject that whole class of
+    near-duplicate before it ever reaches the DB.
+    """
+    normalized = name.strip().casefold()
+    if not normalized:
+        return None
+    res = await run_query(supabase_admin.table("categories").select("id,name,gender"))
+    for cat in (res.data or []):
+        if exclude_id is not None and cat.get("id") == exclude_id:
+            continue
+        if (cat.get("name") or "").strip().casefold() == normalized:
+            return cat
+    return None
+
+
 # ─── PUBLIC ───────────────────────────────────────────────────────────────
 
 @router.get("/")
@@ -111,16 +135,28 @@ async def admin_list_categories(admin=Depends(require_admin)):
 async def add_category(data: CategoryCreate, admin=Depends(require_admin)):
     if data.gender not in ("Boys", "Girls"):
         raise HTTPException(status_code=400, detail="Gender must be Boys or Girls")
+    name = data.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Category name is required")
     try:
+        dup = await _find_similar_category(name)
+        if dup:
+            raise HTTPException(
+                status_code=409,
+                detail=f"A category named '{dup['name']}' (id {dup['id']}) already exists. "
+                       f"Use that one instead of creating a near-duplicate."
+            )
         res = await run_query(supabase_admin.table("categories").insert({
-            "name": data.name,
+            "name": name,
             "icon": data.icon,
             "gender": data.gender,
             "sort_order": data.sort_order
         }))
         await two_layer_clear_pattern("categories:")
-        logger.info(f"Category added: {data.name} by admin {admin['sub']}")
+        logger.info(f"Category added: {name} by admin {admin['sub']}")
         return res.data[0]
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to add category: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to add category")
@@ -130,9 +166,22 @@ async def add_category(data: CategoryCreate, admin=Depends(require_admin)):
 async def update_category(cat_id: int, data: CategoryUpdate, admin=Depends(require_admin)):
     try:
         updates = {k: v for k, v in data.dict().items() if v is not None}
+        if "name" in updates:
+            updates["name"] = updates["name"].strip()
+            if not updates["name"]:
+                raise HTTPException(status_code=400, detail="Category name is required")
+            dup = await _find_similar_category(updates["name"], exclude_id=cat_id)
+            if dup:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"A category named '{dup['name']}' (id {dup['id']}) already exists. "
+                           f"Use that one instead of creating a near-duplicate."
+                )
         res = await run_query(supabase_admin.table("categories").update(updates).eq("id", cat_id))
         await two_layer_clear_pattern("categories:")
         return res.data[0] if res.data else {}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to update category: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to update category")
