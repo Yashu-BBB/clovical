@@ -193,6 +193,8 @@ async def track_and_protect(request: Request, call_next):
 # ─── Static Files & Templates ──────────────────────────────────────────────
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+from utils.asset_version import ASSET_VERSION
+templates.env.globals["ASSET_V"] = ASSET_VERSION
 
 # ─── Routers ──────────────────────────────────────────────────────────────
 app.include_router(public.router)

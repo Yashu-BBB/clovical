@@ -12,7 +12,7 @@
   <meta property="og:site_name" content="clovical">
   <meta property="og:title" content="{{ page_title }}">
   <meta property="og:description" content="{{ page_description }}">
-  <link rel="stylesheet" href="/static/css/shared.css">
+  <link rel="stylesheet" href="/static/css/shared.css?v={{ ASSET_V }}">
   <style>
     .shop-header {
       padding: 56px 0 40px;
@@ -640,7 +640,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
   </div>
 
   <div id="toast-container"></div>
-  <script src="/static/js/shared.js"></script>
+  <script src="/static/js/shared.js?v={{ ASSET_V }}"></script>
   <script>
     /* ─── Image hover-flip for product cards ───────────────────────────────────────── */
     /* Product card images are rendered by renderProductCard() in shared.js.

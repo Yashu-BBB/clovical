@@ -15,7 +15,7 @@
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="{{ page_title }}">
   <meta name="twitter:description" content="{{ page_description }}">
-  <link rel="stylesheet" href="/static/css/shared.css">
+  <link rel="stylesheet" href="/static/css/shared.css?v={{ ASSET_V }}">
   <script type="application/ld+json">{{ organization_ld_json | safe }}</script>
   <script type="application/ld+json">{{ website_ld_json | safe }}</script>
   <style>
@@ -832,7 +832,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
   </footer>
 
   <div id="toast-container"></div>
-  <script src="/static/js/shared.js"></script>
+  <script src="/static/js/shared.js?v={{ ASSET_V }}"></script>
   <script>
     let currentGender = 'Girls';
     let selectedCat = { Girls: null, Boys: null };

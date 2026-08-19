@@ -5,7 +5,7 @@
   <link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Shopkeeper Login — clovical</title>
-  <link rel="stylesheet" href="/static/css/shared.css">
+  <link rel="stylesheet" href="/static/css/shared.css?v={{ ASSET_V }}">
   <style>
     body { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: linear-gradient(135deg, var(--primary-dark), var(--primary-light)); }
     .login-card { background: #fff; border-radius: 20px; padding: 48px 40px; max-width: 420px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
@@ -36,7 +36,7 @@
   </div>
 
   <div id="toast-container"></div>
-  <script src="/static/js/shared.js"></script>
+  <script src="/static/js/shared.js?v={{ ASSET_V }}"></script>
   <script>
     document.getElementById("password").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
 

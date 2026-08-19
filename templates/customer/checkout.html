@@ -7,7 +7,7 @@
   <title>Checkout — clovical</title>
   <meta name="description" content="Complete your order securely at clovical checkout.">
   <link rel="canonical" href="{{ canonical_url }}">
-  <link rel="stylesheet" href="/static/css/shared.css">
+  <link rel="stylesheet" href="/static/css/shared.css?v={{ ASSET_V }}">
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
   <style>
     .checkout-layout {
@@ -733,7 +733,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
   </div>
 
   <div id="toast-container"></div>
-  <script src="/static/js/shared.js"></script>
+  <script src="/static/js/shared.js?v={{ ASSET_V }}"></script>
   <script>
     // ═══════════════════════════════════════════════════════════════════
     // State

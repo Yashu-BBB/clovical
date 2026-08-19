@@ -7,7 +7,7 @@
   <title>Cart — clovical</title>
   <meta name="description" content="Review the items in your clovical shopping cart before checkout.">
   <link rel="canonical" href="{{ canonical_url }}">
-  <link rel="stylesheet" href="/static/css/shared.css">
+  <link rel="stylesheet" href="/static/css/shared.css?v={{ ASSET_V }}">
   <style>
     .cart-layout {
       display: grid;
@@ -367,7 +367,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
   </footer>
 
   <div id="toast-container"></div>
-  <script src="/static/js/shared.js"></script>
+  <script src="/static/js/shared.js?v={{ ASSET_V }}"></script>
   <script>
     function renderCart() {
       const items = Cart.get();

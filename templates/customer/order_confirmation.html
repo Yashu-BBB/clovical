@@ -5,7 +5,7 @@
   <link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Order Confirmation — clovical</title>
-  <link rel="stylesheet" href="/static/css/shared.css">
+  <link rel="stylesheet" href="/static/css/shared.css?v={{ ASSET_V }}">
   <style>
     .confirm-wrap {
       padding: 64px 0 90px;
@@ -95,7 +95,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     </div>
   </div>
 
-  <script src="/static/js/shared.js"></script>
+  <script src="/static/js/shared.js?v={{ ASSET_V }}"></script>
   <script>
     // ── Params from the Cashfree return_url (see routers/payments.py) ──
     // cf_order_id is display-only; checkout_group_id is what we actually

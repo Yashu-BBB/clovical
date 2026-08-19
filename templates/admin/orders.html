@@ -5,7 +5,7 @@
   <link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Orders — clovical Admin</title>
-  <link rel="stylesheet" href="/static/css/shared.css">
+  <link rel="stylesheet" href="/static/css/shared.css?v={{ ASSET_V }}">
   <link rel="stylesheet" href="/static/css/admin.css">
   <style>
     .filter-bar { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:20px; }
@@ -148,7 +148,7 @@
 </div>
 
 <div id="toast-container"></div>
-<script src="/static/js/shared.js"></script>
+<script src="/static/js/shared.js?v={{ ASSET_V }}"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
 // Rendered server-side (routers/public.py) from the same env-var check the

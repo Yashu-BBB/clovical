@@ -14,10 +14,12 @@ from utils.cache import (
     two_layer_clear_pattern, mem_delete,
 )
 from utils import cache as cache_utils
+from utils.asset_version import ASSET_VERSION
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
+templates.env.globals["ASSET_V"] = ASSET_VERSION
 limiter = Limiter(key_func=get_remote_address)
 
 

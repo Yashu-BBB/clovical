@@ -5,7 +5,7 @@
   <link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dashboard — clovical Admin</title>
-  <link rel="stylesheet" href="/static/css/shared.css">
+  <link rel="stylesheet" href="/static/css/shared.css?v={{ ASSET_V }}">
   <link rel="stylesheet" href="/static/css/admin.css">
   <style>
     .toggle-switch { position:relative; display:inline-block; width:44px; height:24px; }
@@ -163,7 +163,7 @@
 </div>
 
 <div id="toast-container"></div>
-<script src="/static/js/shared.js"></script>
+<script src="/static/js/shared.js?v={{ ASSET_V }}"></script>
 <script>
 const STATUS_COLORS = { pending:'warning', confirmed:'primary', shipped:'primary', delivered:'success', cancelled:'danger', refunded:'muted' };
 

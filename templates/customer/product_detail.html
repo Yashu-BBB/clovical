@@ -17,7 +17,7 @@
   <meta name="twitter:title" content="{{ product_title }}">
   <meta name="twitter:description" content="{{ product_description }}">
   <meta name="twitter:image" content="{{ product_image }}">
-  <link rel="stylesheet" href="/static/css/shared.css">
+  <link rel="stylesheet" href="/static/css/shared.css?v={{ ASSET_V }}">
   {% if product_ld_json %}<script type="application/ld+json">{{ product_ld_json | safe }}</script>{% endif %}
   {% if breadcrumb_ld_json %}<script type="application/ld+json">{{ breadcrumb_ld_json | safe }}</script>{% endif %}
   <style>
@@ -761,7 +761,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
   </div>
 
   <div id="toast-container"></div>
-  <script src="/static/js/shared.js"></script>
+  <script src="/static/js/shared.js?v={{ ASSET_V }}"></script>
   <script>
     const productId = "{{ product_id }}";
     let product = null;

@@ -7,9 +7,11 @@ from fastapi.templating import Jinja2Templates
 from utils.auth_utils import get_admin_from_request, get_shopkeeper_from_request
 from utils.nimbuspost import is_configured as nimbuspost_is_configured
 from utils.db import supabase_admin, run_query
+from utils.asset_version import ASSET_VERSION
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
+templates.env.globals["ASSET_V"] = ASSET_VERSION
 
 SITE_URL = "https://clovical.in"
 
