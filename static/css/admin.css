@@ -6,37 +6,39 @@
 /* ─── SIDEBAR ─────────────────────────────────────── */
 .sidebar {
   width: 240px;
-  background: linear-gradient(180deg, var(--primary-dark) 0%, var(--primary) 100%);
-  color: #fff;
+  background: #FFFFFF;
+  color: #1A1A1A;
   display: flex;
   flex-direction: column;
   position: fixed;
   top: 0; left: 0; bottom: 0;
   z-index: 50;
   transition: transform .3s;
+  border-right: 1px solid rgba(0,0,0,.08);
+  box-shadow: 2px 0 12px rgba(0,0,0,0.04);
 }
-.sidebar-logo { padding: 24px 20px 16px; border-bottom: 1px solid rgba(255,255,255,.1); }
-.sidebar-logo h2 { font-size: 1.3rem; font-weight: 800; }
-.sidebar-logo p { opacity: .6; font-size: 0.75rem; }
+.sidebar-logo { padding: 24px 20px 16px; border-bottom: 1px solid rgba(0,0,0,.08); }
+.sidebar-logo h2 { font-size: 1.3rem; font-weight: 800; color: #1A1A1A; }
+.sidebar-logo p { opacity: .6; font-size: 0.75rem; color: #1A1A1A; }
 .sidebar-nav { flex: 1; padding: 12px 0; overflow-y: auto; }
 .nav-item {
   display: flex; align-items: center; gap: 12px;
-  padding: 12px 20px; color: rgba(255,255,255,.75);
+  padding: 12px 20px; color: #4A4A4A;
   font-size: 0.9rem; font-weight: 500;
   transition: all .2s; cursor: pointer;
   border-left: 3px solid transparent;
 }
-.nav-item:hover { background: rgba(255,255,255,.1); color: #fff; border-left-color: rgba(255,255,255,.4); }
-.nav-item.active { background: rgba(255,255,255,.15); color: #fff; border-left-color: #fff; font-weight: 700; }
+.nav-item:hover { background: var(--black-3, #F5F5F5); color: var(--primary, #0A0A0A); border-left-color: rgba(0,0,0,.15); }
+.nav-item.active { background: var(--black-3, #F5F5F5); color: var(--primary, #0A0A0A); border-left-color: var(--primary, #0A0A0A); font-weight: 700; }
 .nav-item .icon { font-size: 1.1rem; width: 20px; text-align: center; }
-.sidebar-footer { padding: 16px 20px; border-top: 1px solid rgba(255,255,255,.1); }
+.sidebar-footer { padding: 16px 20px; border-top: 1px solid rgba(0,0,0,.08); }
 .logout-btn {
   display: flex; align-items: center; gap: 8px;
-  color: rgba(255,255,255,.7); font-size: 0.85rem;
+  color: #4A4A4A; font-size: 0.85rem;
   background: none; border: none; cursor: pointer;
   width: 100%; padding: 8px 0;
 }
-.logout-btn:hover { color: #fff; }
+.logout-btn:hover { color: var(--primary, #0A0A0A); }
 
 /* ─── MAIN CONTENT ────────────────────────────────── */
 .admin-main { margin-left: 240px; flex: 1; min-width: 0; }
@@ -78,4 +80,18 @@
   .sidebar-toggle { display: block; }
   .admin-content { padding: 16px; }
   .stat-grid { grid-template-columns: repeat(2, 1fr); }
+
+  /* Solid dimming backdrop behind the sidebar when open on mobile, so the
+     dashboard content behind it is fully obscured rather than just having
+     the sidebar itself be opaque. .sidebar is always immediately followed
+     by .admin-main in the markup (admin and shopkeeper templates alike),
+     so this needs no extra HTML/JS — it toggles off the existing .open
+     class the sidebar-toggle button already sets. */
+  .sidebar.open ~ .admin-main::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    z-index: 45; /* above admin-main's own content, below .sidebar (z-index:50) */
+  }
 }
