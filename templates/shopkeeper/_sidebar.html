@@ -35,13 +35,31 @@
 </aside>
 
 <style>
-  /* Sidebar text color override — was white-on-white/invisible */
+  /* Sidebar theme override — forces white bg / dark text regardless of
+     what admin.css is cached in the browser (admin.css's own <link> has
+     no cache-busting version param, unlike shared.css, so browsers can
+     hold onto an old copy indefinitely after a deploy). Living here as
+     inline HTML means it always reflects the current template, no
+     separate cached file involved. */
+  #sidebar, #sidebar.sidebar {
+    background: #FFFFFF !important;
+    border-right: 1px solid rgba(0,0,0,.08) !important;
+    box-shadow: 2px 0 12px rgba(0,0,0,0.04) !important;
+  }
+  #sidebar .sidebar-logo, #sidebar .sidebar-footer {
+    border-color: rgba(0,0,0,.08) !important;
+  }
   #sidebar, #sidebar .sidebar-logo h2, #sidebar .sidebar-logo p,
   #sidebar .nav-item, #sidebar .nav-item .icon, #sidebar .logout-btn {
     color: #1a1a1a !important;
   }
   #sidebar .nav-item:hover, #sidebar .nav-item.active, #sidebar .logout-btn:hover {
     color: #1a1a1a !important;
+    background: #F5F5F5 !important;
+    border-left-color: rgba(0,0,0,.15) !important;
+  }
+  #sidebar .nav-item.active {
+    border-left-color: #1a1a1a !important;
   }
   .notif-bell-wrap { position: relative; flex-shrink: 0; }
   .notif-bell-btn {
