@@ -231,14 +231,19 @@
     <!-- Shopkeeper's original photos (reference only, never edited here) -->
     <div class="form-group">
       <label class="form-label">Shopkeeper's Submitted Photos <span class="locked-note">— reference only, deleted automatically once accepted</span></label>
-      <div style="display:flex;gap:14px">
+      <div style="display:flex;gap:14px;align-items:flex-start">
         <div>
           <div class="locked-note" style="margin-bottom:4px">Front</div>
           <img id="sk-photo-front" class="img-slot" style="width:90px;height:110px;cursor:default" src="">
+          <button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;width:90px;padding:4px 0;font-size:0.72rem" onclick="downloadSkPhoto('front')">⬇ Download</button>
         </div>
         <div>
           <div class="locked-note" style="margin-bottom:4px">Back</div>
           <img id="sk-photo-back" class="img-slot" style="width:90px;height:110px;cursor:default" src="">
+          <button type="button" class="btn btn-outline btn-sm" style="margin-top:6px;width:90px;padding:4px 0;font-size:0.72rem" onclick="downloadSkPhoto('back')">⬇ Download</button>
+        </div>
+        <div style="align-self:center">
+          <button type="button" class="btn btn-outline btn-sm" style="font-size:0.78rem" onclick="downloadSkPhoto('front'); downloadSkPhoto('back');">⬇ Download Both</button>
         </div>
       </div>
     </div>
@@ -364,6 +369,35 @@ function openReview(r) {
 function closeModal() {
   document.getElementById('review-modal').classList.remove('open');
   activeRequest = null;
+}
+
+// ─── DOWNLOAD SHOPKEEPER REFERENCE PHOTOS ───────────────────────────────
+// Images are stored in a public Supabase Storage bucket, so the <img> src
+// is a plain cross-origin URL. A bare <a download> is ignored by browsers
+// for cross-origin links (it just navigates instead of saving), so we
+// fetch the bytes and save them as a blob, which works regardless of origin.
+async function downloadSkPhoto(which) {
+  const url = which === 'front' ? activeRequest?.shopkeeper_image_front : activeRequest?.shopkeeper_image_back;
+  if (!url) { showToast('No photo to download', 'error'); return; }
+  const safeName = (activeRequest.name || 'product').replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+  const filename = `${safeName}-${which}.webp`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Fetch failed');
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(blobUrl);
+  } catch (e) {
+    // Fallback: open in a new tab so the admin can still save it manually
+    // (e.g. if the bucket ever disallows cross-origin fetch).
+    window.open(url, '_blank');
+  }
 }
 
 function updateDiscountPreview() {

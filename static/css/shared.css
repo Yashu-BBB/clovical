@@ -29,6 +29,17 @@
   --danger:      #C0392B;
   --warning:     #8B6914;
 
+  /* ─── PRIMARY (admin/shopkeeper panel accent) ───
+     Referenced throughout admin.css and the admin/shopkeeper templates
+     (sidebar gradient, active chips/tabs, links) but was never actually
+     declared anywhere — those var(--primary...) lookups had no fallback,
+     which invalidates the whole declaration they sit in (e.g. the sidebar's
+     background: linear-gradient(...) computes to nothing / transparent).
+     Defined here to match the site's black/white theme. */
+  --primary:       #0A0A0A;
+  --primary-dark:  #000000;
+  --primary-light: #3A3A3A;
+
   /* ─── SHAPE ───────────────────── */
   --radius-sm:   4px;
   --radius:      8px;

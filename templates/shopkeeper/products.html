@@ -200,11 +200,7 @@
       <!-- Colors -->
       <div class="form-group">
         <label class="form-label">Colors (comma separated)</label>
-        <input class="form-control" id="colors-input" placeholder="e.g. Red, Black, White, Navy Blue" oninput="renderColorStockRows()">
-        <div style="margin-top:12px">
-          <label class="form-label" style="font-size:0.8rem">Stock per colour <span style="color:var(--muted);font-weight:400">— leave blank to not track that colour separately</span></label>
-          <div id="color-stock-rows" class="variant-stock-rows"></div>
-        </div>
+        <input class="form-control" id="colors-input" placeholder="e.g. Red, Black, White, Navy Blue">
       </div>
 
       <!-- Size Chart (optional) -->
@@ -273,7 +269,6 @@
 <script>
 let selectedSizes = [];
 let variantSizeStock = {};
-let variantColorStock = {};
 const photos = { front: null, back: null };
 const MAX_PHOTO_SIZE = 10 * 1024 * 1024;
 
@@ -404,22 +399,6 @@ function setSizeStock(size, val) {
   else variantSizeStock[size] = Math.max(0, parseInt(val, 10) || 0);
 }
 
-function renderColorStockRows() {
-  const wrap = document.getElementById('color-stock-rows');
-  const raw = document.getElementById('colors-input').value || '';
-  const colors = raw.split(',').map(c => c.trim()).filter(Boolean);
-  if (!colors.length) { wrap.innerHTML = '<span class="variant-stock-empty">Add colours above first</span>'; return; }
-  wrap.innerHTML = colors.map(c => `
-    <div class="variant-stock-row">
-      <span class="variant-stock-label">${c}</span>
-      <input type="number" min="0" placeholder="—" value="${variantColorStock[c] !== undefined ? variantColorStock[c] : ''}" oninput="setColorStock('${c}', this.value)">
-    </div>`).join('');
-}
-function setColorStock(color, val) {
-  if (val === '' || val === null) delete variantColorStock[color];
-  else variantColorStock[color] = Math.max(0, parseInt(val, 10) || 0);
-}
-
 // ─── SIZE CHART (identical logic to admin add-product modal) ───────────
 const SIZE_CHART_PRESETS = {
   tshirt: { columns: ["Size", "Chest", "Shoulder", "Length"], rows: [["S","38","16.5","27.5"],["M","40","17","28.2"],["L","42","17.5","29"],["XL","44","18","29.8"],["2XL","46.5","18.8","30.5"],["3XL","49","19.5","31.2"]] },
@@ -506,13 +485,12 @@ function removePhoto(which) {
 function openAddModal() {
   document.getElementById('request-form').reset();
   document.getElementById('modal-alert').innerHTML = '';
-  selectedSizes = []; variantSizeStock = {}; variantColorStock = {};
+  selectedSizes = []; variantSizeStock = {};
   photos.front = null; photos.back = null;
   removePhoto('front'); removePhoto('back');
   clearSizeChart();
   selectGender('Girls');
   loadSizePreset('standard', document.querySelector('.size-type-tab'));
-  renderColorStockRows();
   document.getElementById('add-modal').classList.add('open');
 }
 function closeAddModal() { document.getElementById('add-modal').classList.remove('open'); }
@@ -535,7 +513,6 @@ document.getElementById('request-form').addEventListener('submit', async functio
 
   const colorsList = (document.getElementById('colors-input').value || '').split(',').map(c => c.trim()).filter(Boolean);
   const sizeStockOut = {}; selectedSizes.forEach(s => { if (variantSizeStock[s] !== undefined) sizeStockOut[s] = variantSizeStock[s]; });
-  const colorStockOut = {}; colorsList.forEach(c => { if (variantColorStock[c] !== undefined) colorStockOut[c] = variantColorStock[c]; });
 
   const editorVisible = document.getElementById('size-chart-editor').style.display !== 'none';
   let sizeChartJson = '';
@@ -553,7 +530,8 @@ document.getElementById('request-form').addEventListener('submit', async functio
   fd.append('sizes', JSON.stringify(selectedSizes));
   fd.append('colors', JSON.stringify(colorsList));
   fd.append('size_stock', JSON.stringify(sizeStockOut));
-  fd.append('color_stock', JSON.stringify(colorStockOut));
+  // Stock is tracked only per-size for shopkeeper requests — color_stock is
+  // intentionally not sent; the backend defaults it to {} when absent.
   fd.append('category', document.getElementById('category-select').value);
   fd.append('gender', window.selectedGender || 'Girls');
   if (sizeChartJson) fd.append('size_chart', sizeChartJson);
