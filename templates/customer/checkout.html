@@ -739,6 +739,16 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     // State
     // ═══════════════════════════════════════════════════════════════════
     let deliveryFee = 0;
+    const COD_SURCHARGE = 20; // must match COD_SURCHARGE in routers/orders.py
+    // Must mirror calc_item_count_surcharge() in routers/orders.py — shown
+    // here purely for display, the backend recomputes and freezes the real
+    // charge independently at order creation.
+    const ITEM_SURCHARGE_FOR_SECOND_ITEM = 11;
+    const ITEM_SURCHARGE_PER_EXTRA_ITEM = 10;
+    function calcItemCountSurcharge(itemCount) {
+      if (itemCount <= 1) return 0;
+      return ITEM_SURCHARGE_FOR_SECOND_ITEM + ITEM_SURCHARGE_PER_EXTRA_ITEM * (itemCount - 2);
+    }
     let selectedPaymentMethod = null;   // "cod" | "cashfree"
     let currentCustomer = null;         // { id, phone, email }
 
@@ -1073,13 +1083,21 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       `).join("");
 
       const subtotal = Cart.total();
-      const total = subtotal + deliveryFee;
+      const itemCount = Cart.count();
+      // Delivery fee scales with total items in the cart (more weight for
+      // the courier) and COD adds a further flat surcharge — both shown
+      // here as soon as they apply, and both re-applied independently by
+      // the backend when the order is actually created.
+      const itemSurcharge = calcItemCountSurcharge(itemCount);
+      const codExtra = selectedPaymentMethod === "cod" ? COD_SURCHARGE : 0;
+      const effectiveDeliveryFee = deliveryFee + itemSurcharge + codExtra;
+      const total = subtotal + effectiveDeliveryFee;
 
-      if (deliveryFee > 0) {
+      if (effectiveDeliveryFee > 0) {
         document.getElementById("summary-delivery-row").style.display = "flex";
-        document.getElementById("summary-delivery-fee").textContent = formatPrice(deliveryFee);
+        document.getElementById("summary-delivery-fee").textContent = formatPrice(effectiveDeliveryFee);
         document.getElementById("delivery-fee-notice").style.display = "flex";
-        document.getElementById("delivery-fee-notice-amount").textContent = formatPrice(deliveryFee);
+        document.getElementById("delivery-fee-notice-amount").textContent = formatPrice(effectiveDeliveryFee);
       } else {
         document.getElementById("summary-delivery-row").style.display = "none";
         document.getElementById("delivery-fee-notice").style.display = "none";
@@ -1099,6 +1117,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       document.getElementById("err-payment-method").textContent = "";
       updateOrderButtonLabel();
       updateOrderButtonState();
+      renderSummary(); // re-render so the COD surcharge appears/disappears immediately
     }
 
     function updateOrderButtonLabel() {
@@ -1244,7 +1263,6 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       const addressLine2 = document.getElementById("address_line2").value.trim();
       const combinedAddress = addressLine2 ? `${addressLine1}, ${addressLine2}` : addressLine1;
 
-      const item = items[0];
       const orderData = {
         customer_name:    document.getElementById("customer_name").value.trim(),
         customer_phone:   document.getElementById("customer_phone").value.trim(),
@@ -1253,9 +1271,15 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         customer_address: combinedAddress,
         customer_city:    document.getElementById("customer_city").value.trim(),
         customer_pincode: document.getElementById("customer_pincode").value.trim(),
-        product_id:       item.id,
-        size:             item.size,
-        color:            item.color,
+        // The WHOLE cart, not just the first item — every distinct
+        // product/size/colour line becomes its own order row(s) on the
+        // backend, all sharing one checkout_group_id.
+        items: items.map(i => ({
+          product_id: i.id,
+          size:       i.size,
+          color:      i.color,
+          qty:        i.qty || 1,
+        })),
         captcha_token:    turnstileOrderToken,
         payment_method:   selectedPaymentMethod,
       };
@@ -1289,7 +1313,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
           event: "purchase",
           ecommerce: {
             transaction_id: result.order_id,
-            value: Cart.total() + deliveryFee,
+            value: Cart.total() + deliveryFee + calcItemCountSurcharge(Cart.count()) + COD_SURCHARGE,
             currency: "INR",
             items: items.map(i => ({
               item_id: i.id,

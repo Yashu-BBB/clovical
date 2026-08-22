@@ -28,6 +28,16 @@ router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
 
 
+class CartItemIn(BaseModel):
+    product_id: str = Field(..., max_length=36)
+    size: str = Field(..., max_length=50)
+    color: str = Field(..., max_length=100)
+    # How many units of this exact product/size/colour combo. Defaults to 1
+    # so any old/cached frontend build that still omits qty keeps working
+    # exactly as it did as a single-unit line.
+    qty: int = Field(1, ge=1, le=20)
+
+
 class OrderRequest(BaseModel):
     customer_name: str = Field(..., max_length=200)
     customer_phone: str = Field(..., max_length=10, min_length=10)
@@ -36,9 +46,11 @@ class OrderRequest(BaseModel):
     customer_address: str = Field("", max_length=500)
     customer_city: str = Field(..., max_length=100)
     customer_pincode: str = Field(..., max_length=6, min_length=6)
-    product_id: str = Field(..., max_length=36)
-    size: str = Field(..., max_length=50)
-    color: str = Field(..., max_length=100)
+    # The whole cart, not just one product — every distinct product/size/
+    # colour line the customer had in their cart at checkout. Each line
+    # becomes its own order row(s) below (see create_order()), all sharing
+    # one checkout_group_id.
+    items: list[CartItemIn] = Field(..., min_length=1, max_length=20)
     captcha_token: str = Field("", max_length=2000)
     # "cod" or "cashfree" only — anything else is rejected by pydantic
     # before create_order() ever runs. There is deliberately no "upi"
@@ -69,10 +81,47 @@ async def _is_auto_ship_enabled() -> bool:
         return False
 
 
+# Flat extra charged on Cash-on-Delivery orders, on top of the admin's base
+# delivery fee — covers the extra handling/collection risk COD carries for
+# the courier. Kept as a constant (not an admin setting) since it's a fixed
+# business rule, not something that needs to change per-shop/per-season the
+# way the base delivery fee does.
+COD_SURCHARGE = 20.0
+
+# ─── Item-count delivery surcharge ──────────────────────────────────────
+# More items in one checkout means more courier weight, so the delivery
+# fee steps up as item count grows:
+#   1 item  -> +0          (base fee only)
+#   2 items -> +11
+#   3 items -> +21   (+10 more)
+#   4 items -> +31   (+10 more)
+#   ...every item after the 2nd adds another flat +10.
+# "item count" = total quantity across every cart line (a qty=2 line counts
+# as 2 items), matching what the customer sees as their cart count.
+ITEM_SURCHARGE_FOR_SECOND_ITEM = 11.0
+ITEM_SURCHARGE_PER_EXTRA_ITEM = 10.0
+
+
+def calc_item_count_surcharge(item_count: int) -> float:
+    """Extra delivery fee for a checkout containing `item_count` total units."""
+    if item_count <= 1:
+        return 0.0
+    return ITEM_SURCHARGE_FOR_SECOND_ITEM + ITEM_SURCHARGE_PER_EXTRA_ITEM * (item_count - 2)
+
+
+# What a single-item order "saved" by not tipping into the 2-item surcharge —
+# used purely for the admin-panel display (see routers/admin.py), not stored
+# on the order itself.
+SINGLE_ITEM_SAVINGS = ITEM_SURCHARGE_FOR_SECOND_ITEM
+
+
 async def get_delivery_fee() -> float:
     """
-    Reads the admin-configured delivery fee from the settings table.
+    Reads the admin-configured BASE delivery fee from the settings table.
     Defaults to 0 if not set or unreadable, so checkout never breaks.
+    Does NOT include the COD surcharge — callers that need the final,
+    payment-method-aware fee should add COD_SURCHARGE themselves when
+    payment_method == "cod" (see create_order()).
     """
     try:
         res = await run_query(
@@ -396,9 +445,8 @@ async def create_order(order: OrderRequest, request: Request, customer=Depends(r
 
     # Address Line 1 is required; Address Line 2 is optional. Combine them
     # into the single customer_address field the rest of the order flow
-    # (DB row, WhatsApp notification, etc.) already expects. Re-derived
-    # here rather than trusting the frontend's combined value, since
-    # frontend validation can be bypassed.
+    # already expects. Re-derived here rather than trusting the frontend's
+    # combined value, since frontend validation can be bypassed.
     address_line1 = order.address_line1.strip()
     address_line2 = order.address_line2.strip()
     if not address_line1:
@@ -423,48 +471,32 @@ async def create_order(order: OrderRequest, request: Request, customer=Depends(r
             detail="Invalid pincode. Must be a valid 6-digit Indian pincode."
         )
 
-    # Fetch product (including hidden price)
-    try:
-        prod_res = await run_query(supabase_admin.table("products").select("*").eq("id", order.product_id).single())
-    except Exception as e:
-        logger.error(f"Order save failed - product fetch: {e}", exc_info=True)
-        raise HTTPException(status_code=404, detail="Product not found")
+    # Total units across every cart line — this is what the item-count
+    # delivery surcharge scales on, and also a sane cap so one checkout
+    # can't blow up into hundreds of order rows.
+    total_item_count = sum(line.qty for line in order.items)
+    if total_item_count > 30:
+        raise HTTPException(
+            status_code=400,
+            detail="Too many items for a single order. Please split into more than one order."
+        )
 
-    prod = prod_res.data
-    if not prod or prod["stock"] < 1:
-        raise HTTPException(status_code=400, detail="Product out of stock")
+    # Delivery fee is frozen at order-creation time (from the admin's base
+    # setting) so later changes to the setting never alter an existing
+    # order's total. Two things are layered on top of the base fee, both
+    # computed server-side — never trusted from the client:
+    #   - the item-count surcharge (more items -> more courier weight)
+    #   - the flat COD surcharge, from order.payment_method (validated by
+    #     pydantic above)
+    base_delivery_fee = await get_delivery_fee()
+    item_surcharge = calc_item_count_surcharge(total_item_count)
+    cod_extra = COD_SURCHARGE if order.payment_method == "cod" else 0.0
+    total_delivery_fee = base_delivery_fee + item_surcharge + cod_extra
 
-    # Per-variant stock check. A size/colour that isn't a key in the map has
-    # no per-variant restriction (older products without variant-level stock
-    # keep working exactly as before). A variant present with a value <= 0
-    # is out of stock and must never be orderable, even if the storefront UI
-    # somehow let it through (e.g. a stale page, a bypassed frontend check).
-    size_stock_map = prod.get("size_stock") or {}
-    color_stock_map = prod.get("color_stock") or {}
-    if order.size in size_stock_map and size_stock_map[order.size] is not None and size_stock_map[order.size] <= 0:
-        raise HTTPException(status_code=400, detail=f"Size '{order.size}' is out of stock")
-    if order.color in color_stock_map and color_stock_map[order.color] is not None and color_stock_map[order.color] <= 0:
-        raise HTTPException(status_code=400, detail=f"Colour '{order.color}' is out of stock")
-
-    # Delivery fee is frozen at order-creation time (from the admin setting)
-    # so later changes to the setting never alter an existing order's total.
-    delivery_fee = await get_delivery_fee()
-
-    # Main product photo, denormalized onto the order so it stays correct
-    # even if the product is later edited or removed. Prefer the new
-    # multi-image array's first photo, fall back to the legacy single
-    # "image" field for older products.
-    main_image_url = None
-    if prod.get("images"):
-        main_image_url = prod["images"][0]
-    elif prod.get("image"):
-        main_image_url = prod["image"]
-
-    # checkout_group_id groups every order row created from one checkout —
-    # this endpoint creates a single order row per call, but the column is
-    # always populated (matching schema_checkout_migration.sql's "COD and
-    # Cashfree both use this") so a future multi-item cart or "my orders"
-    # view can group/filter consistently regardless of payment method.
+    # checkout_group_id ties every order row created from this one checkout
+    # together — one per distinct product/size/colour/qty-unit in the cart.
+    # Used by "my orders", the admin panel, and payments.py (which sums
+    # our_price + delivery_fee across the whole group for Cashfree).
     checkout_group_id = str(uuid.uuid4())
 
     # payment_type/payment_status branch on the now-required payment_method.
@@ -477,156 +509,263 @@ async def create_order(order: OrderRequest, request: Request, customer=Depends(r
         payment_type = "cashfree"
         payment_status = "awaiting_payment"
 
-    # Create order
+    # ── Create one order row per unit, across every cart line ───────────
+    # Each cart line (product/size/colour/qty) is validated and inserted
+    # independently, in the order the customer had them in their cart. If
+    # ANY line fails — out of stock, a stock race, a DB error — everything
+    # already committed for THIS checkout is rolled back (rows deleted,
+    # stock restored) before the error reaches the customer, so a failed
+    # checkout never leaves a partial order behind.
+    created_lines: list[dict] = []   # for rollback + notifications
+    main_image_url_for_response = None
+    delivery_fee_remaining = total_delivery_fee  # assigned to the very first row created
+
+    async def _rollback_created_lines():
+        for line in reversed(created_lines):
+            try:
+                await run_query(
+                    supabase_admin.table("orders").delete().in_("id", line["order_ids"])
+                )
+            except Exception as e:
+                logger.error(f"Rollback delete failed for order_ids={line['order_ids']}: {e}", exc_info=True)
+            for _ in range(line["qty"]):
+                await _restore_order_stock({
+                    "id": line["order_ids"][0],
+                    "product_id": line["product_id"],
+                    "size": line["size"],
+                    "color": line["color"],
+                })
+
     try:
-        order_data = {
-            "customer_name": order.customer_name,
-            "customer_phone": order.customer_phone,
-            "customer_address": order.customer_address,
-            "customer_city": order.customer_city,
-            "customer_pincode": order.customer_pincode,
-            "product_id": order.product_id,
-            "product_name": prod["name"],
-            "product_image": main_image_url,
-            "size": order.size,
-            "color": order.color,
-            "our_price": prod["our_price"],
-            "shopkeeper_price": prod["shopkeeper_price"],
-            "shopkeeper_id": prod["shopkeeper_id"],
-            "shopkeeper_code": prod["shopkeeper_code"],
-            "payment_type": payment_type,
-            "payment_status": payment_status,
-            "delivery_fee": delivery_fee,
-            # Never trust a user_id supplied by the frontend — OrderRequest
-            # has no such field, and this is the only place user_id is set:
-            # always the logged-in customer's own id from their session
-            # cookie (require_customer), never anything client-supplied.
-            "user_id": customer["sub"],
-            "checkout_group_id": checkout_group_id,
-            "agent_state": {}
-        }
-        res = await run_query(supabase_admin.table("orders").insert(order_data))
-        new_order = res.data[0]
-        logger.info(
-            f"Order created: {new_order['id']}, customer: {order.customer_phone}, "
-            f"product: {prod['name']}, payment_method: {order.payment_method}"
-        )
+        for cart_item in order.items:
+            # Fetch fresh every iteration (never reused across lines) so a
+            # duplicate product/size/colour line in the same request checks
+            # stock against the value THIS loop already decremented, not a
+            # stale snapshot from before that decrement.
+            try:
+                prod_res = await run_query(
+                    supabase_admin.table("products").select("*").eq("id", cart_item.product_id).single()
+                )
+            except Exception as e:
+                logger.error(f"Order save failed - product fetch for {cart_item.product_id}: {e}", exc_info=True)
+                await _rollback_created_lines()
+                raise HTTPException(status_code=404, detail="One of the products in your cart could not be found.")
 
-        await cache_delete("orders:recent")
-        await cache_delete("admin:dashboard")
-        await cache_delete("analytics:overview")
-    except Exception as e:
-        logger.error(f"Order save failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to create order")
+            prod = prod_res.data
+            if not prod or prod["stock"] < cart_item.qty:
+                await _rollback_created_lines()
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"'{prod['name'] if prod else cart_item.product_id}' doesn't have enough stock for the quantity in your cart."
+                )
 
-    # Decrement stock atomically — only succeeds if stock hasn't changed
-    # since we read it above. If it has (a concurrent order beat us to it),
-    # roll back the order we just created instead of allowing stock to go negative.
-    try:
-        stock_update = {"stock": prod["stock"] - 1}
-        if order.size in size_stock_map and size_stock_map[order.size] is not None:
-            updated_size_map = dict(size_stock_map)
-            updated_size_map[order.size] = max(0, updated_size_map[order.size] - 1)
-            stock_update["size_stock"] = updated_size_map
-        if order.color in color_stock_map and color_stock_map[order.color] is not None:
-            updated_color_map = dict(color_stock_map)
-            updated_color_map[order.color] = max(0, updated_color_map[order.color] - 1)
-            stock_update["color_stock"] = updated_color_map
+            size_stock_map = prod.get("size_stock") or {}
+            color_stock_map = prod.get("color_stock") or {}
+            if cart_item.size in size_stock_map and size_stock_map[cart_item.size] is not None \
+                    and size_stock_map[cart_item.size] < cart_item.qty:
+                await _rollback_created_lines()
+                raise HTTPException(status_code=400, detail=f"Size '{cart_item.size}' doesn't have enough stock for {prod['name']}")
+            if cart_item.color in color_stock_map and color_stock_map[cart_item.color] is not None \
+                    and color_stock_map[cart_item.color] < cart_item.qty:
+                await _rollback_created_lines()
+                raise HTTPException(status_code=400, detail=f"Colour '{cart_item.color}' doesn't have enough stock for {prod['name']}")
 
-        stock_result = await run_query(
-            supabase_admin.table("products")
-            .update(stock_update)
-            .eq("id", order.product_id)
-            .eq("stock", prod["stock"])
-        )
+            # Main product photo, denormalized onto the order so it stays
+            # correct even if the product is later edited or removed.
+            main_image_url = None
+            if prod.get("images"):
+                main_image_url = prod["images"][0]
+            elif prod.get("image"):
+                main_image_url = prod["image"]
+            if main_image_url_for_response is None:
+                main_image_url_for_response = main_image_url
 
-        if not stock_result.data:
-            await run_query(supabase_admin.table("orders").delete().eq("id", new_order["id"]))
-            logger.warning(f"Stock race condition detected for {order.product_id} — order {new_order['id']} rolled back")
-            raise HTTPException(
-                status_code=409,
-                detail="Product just went out of stock. Please try again."
+            # The whole checkout's delivery fee lands entirely on the very
+            # first order row created (across all lines) — every other row
+            # gets 0. This keeps "sum(delivery_fee) across the group" the
+            # correct total (used by payments.py for Cashfree, and by the
+            # admin panel) without splitting one indivisible shipping fee
+            # awkwardly across several product rows.
+            row_template = {
+                "customer_name": order.customer_name,
+                "customer_phone": order.customer_phone,
+                "customer_address": order.customer_address,
+                "customer_city": order.customer_city,
+                "customer_pincode": order.customer_pincode,
+                "product_id": cart_item.product_id,
+                "product_name": prod["name"],
+                "product_image": main_image_url,
+                "size": cart_item.size,
+                "color": cart_item.color,
+                "our_price": prod["our_price"],
+                "shopkeeper_price": prod["shopkeeper_price"],
+                "shopkeeper_id": prod["shopkeeper_id"],
+                "shopkeeper_code": prod["shopkeeper_code"],
+                "payment_type": payment_type,
+                "payment_status": payment_status,
+                # Never trust a user_id supplied by the frontend — always
+                # the logged-in customer's own id from their session.
+                "user_id": customer["sub"],
+                "checkout_group_id": checkout_group_id,
+                "agent_state": {},
+            }
+
+            rows_for_this_line = []
+            for _ in range(cart_item.qty):
+                row = dict(row_template)
+                row["delivery_fee"] = delivery_fee_remaining
+                delivery_fee_remaining = 0.0
+                rows_for_this_line.append(row)
+
+            try:
+                res = await run_query(supabase_admin.table("orders").insert(rows_for_this_line))
+                inserted = res.data
+            except Exception as e:
+                logger.error(f"Order save failed for product {cart_item.product_id}: {e}", exc_info=True)
+                await _rollback_created_lines()
+                raise HTTPException(status_code=500, detail="Failed to create order")
+
+            order_ids = [row["id"] for row in inserted]
+
+            # Decrement stock atomically — only succeeds if stock hasn't
+            # changed since we read it above. If it has (a concurrent order
+            # beat us to it), roll back everything from this checkout.
+            stock_update = {"stock": prod["stock"] - cart_item.qty}
+            if cart_item.size in size_stock_map and size_stock_map[cart_item.size] is not None:
+                updated_size_map = dict(size_stock_map)
+                updated_size_map[cart_item.size] = max(0, updated_size_map[cart_item.size] - cart_item.qty)
+                stock_update["size_stock"] = updated_size_map
+            if cart_item.color in color_stock_map and color_stock_map[cart_item.color] is not None:
+                updated_color_map = dict(color_stock_map)
+                updated_color_map[cart_item.color] = max(0, updated_color_map[cart_item.color] - cart_item.qty)
+                stock_update["color_stock"] = updated_color_map
+
+            stock_result = await run_query(
+                supabase_admin.table("products")
+                .update(stock_update)
+                .eq("id", cart_item.product_id)
+                .eq("stock", prod["stock"])
             )
-        # Invalidate cached product data so the storefront immediately
-        # reflects the updated overall/variant stock instead of serving a
-        # stale "in stock" snapshot to the next visitor.
-        mem_clear_pattern("product:")
-        await cache_clear_pattern("products:*")
 
-        # Notify admins if this order just pushed the product (or the
-        # specific size/colour ordered) to zero — never on every order,
-        # only the one that actually crosses from >0 to 0.
-        _fire_and_forget(
-            check_out_of_stock(order.product_id, prod["name"], prod, stock_update),
-            f"out-of-stock check for {order.product_id}",
-        )
+            if not stock_result.data:
+                await run_query(supabase_admin.table("orders").delete().in_("id", order_ids))
+                logger.warning(f"Stock race condition detected for {cart_item.product_id} — rolling back whole checkout")
+                await _rollback_created_lines()
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"'{prod['name']}' just went out of stock. Please review your cart and try again."
+                )
+
+            mem_clear_pattern("product:")
+            await cache_clear_pattern("products:*")
+
+            _fire_and_forget(
+                check_out_of_stock(cart_item.product_id, prod["name"], prod, stock_update),
+                f"out-of-stock check for {cart_item.product_id}",
+            )
+
+            created_lines.append({
+                "order_ids": order_ids,
+                "product_id": cart_item.product_id,
+                "product_name": prod["name"],
+                "size": cart_item.size,
+                "color": cart_item.color,
+                "qty": cart_item.qty,
+                "our_price": prod["our_price"],
+                "shopkeeper_id": prod.get("shopkeeper_id"),
+            })
     except HTTPException:
         raise
     except Exception as e:
-        logger.warning(f"Stock update failed for {order.product_id}: {e}", exc_info=True)
+        logger.error(f"Order save failed unexpectedly: {e}", exc_info=True)
+        await _rollback_created_lines()
+        raise HTTPException(status_code=500, detail="Failed to create order")
 
-    # ── Notifications: new order (admin), product ordered (shopkeeper),
-    #    order placed (customer). Fire-and-forget — never let a notification
-    #    failure affect the order response the customer is waiting on. ──
+    all_order_ids = [oid for line in created_lines for oid in line["order_ids"]]
+    first_order_id = all_order_ids[0]
+
+    await cache_delete("orders:recent")
+    await cache_delete("admin:dashboard")
+    await cache_delete("analytics:overview")
+
+    logger.info(
+        f"Order group created: {checkout_group_id} ({len(all_order_ids)} rows), "
+        f"customer: {order.customer_phone}, payment_method: {order.payment_method}"
+    )
+
+    # ── Notifications ─────────────────────────────────────────────────
+    # Admin + customer notifications are ONE aggregated message per
+    # checkout (not per row) so a 4-item cart doesn't spam either of them
+    # with 4 separate pings. Shopkeeper notifications stay per-line, since
+    # each is genuinely "your specific product was ordered" — grouped by
+    # shopkeeper so a shop with two different items in the same cart still
+    # only gets one notification.
+    item_summary = ", ".join(f"{line['product_name']} ({line['size']}/{line['color']}) x{line['qty']}" for line in created_lines)
+    order_total_value = sum(line["our_price"] * line["qty"] for line in created_lines) + total_delivery_fee
+
     _fire_and_forget(
         notify_admins(
             "new_order",
-            f"New order — {prod['name']}",
-            f"{order.customer_name} ordered {prod['name']} ({order.size} / {order.color}), ₹{prod['our_price']}.",
+            f"New order — {len(created_lines)} item{'s' if len(created_lines) != 1 else ''}",
+            f"{order.customer_name} ordered {item_summary}. Total ₹{order_total_value:.2f}.",
             link="/admin/orders",
-            order_id=new_order["id"],
-            product_id=order.product_id,
+            order_id=first_order_id,
         ),
-        f"admin new_order notification for {new_order['id']}",
+        f"admin new_order notification for group {checkout_group_id}",
     )
-    _fire_and_forget(
-        notify_shopkeeper(
-            prod.get("shopkeeper_id"),
-            "product_ordered",
-            "Your product was ordered! 🎉",
-            f"{prod['name']} ({order.size} / {order.color}) was just ordered.",
-            link="/shopkeeper/orders",
-            order_id=new_order["id"],
-            product_id=order.product_id,
-        ),
-        f"shopkeeper product_ordered notification for {new_order['id']}",
-    )
+
+    shopkeepers_notified = set()
+    for line in created_lines:
+        sk_id = line["shopkeeper_id"]
+        if not sk_id or sk_id in shopkeepers_notified:
+            continue
+        shopkeepers_notified.add(sk_id)
+        _fire_and_forget(
+            notify_shopkeeper(
+                sk_id,
+                "product_ordered",
+                "Your product was ordered! 🎉",
+                f"{line['product_name']} ({line['size']} / {line['color']}) was just ordered.",
+                link="/shopkeeper/orders",
+                order_id=line["order_ids"][0],
+                product_id=line["product_id"],
+            ),
+            f"shopkeeper product_ordered notification for {line['order_ids'][0]}",
+        )
+
     _fire_and_forget(
         notify_customer(
             customer["sub"],
             "order_created",
             "Order placed ✅",
-            f"Your order for {prod['name']} ({order.size} / {order.color}) has been placed.",
+            f"Your order for {item_summary} has been placed.",
             link="/my-orders",
-            order_id=new_order["id"],
-            product_id=order.product_id,
+            order_id=first_order_id,
         ),
-        f"customer order_created notification for {new_order['id']}",
+        f"customer order_created notification for group {checkout_group_id}",
     )
     _fire_and_forget(
         send_order_sms(
             order.customer_phone, "order_created",
-            {"var1": order.customer_name, "var2": prod["name"], "var3": new_order["id"][:8]},
+            {"var1": order.customer_name, "var2": created_lines[0]["product_name"], "var3": first_order_id[:8]},
         ),
-        f"order_created SMS for {new_order['id']}",
+        f"order_created SMS for group {checkout_group_id}",
     )
 
     # No WhatsApp redirect for either payment method any more — the
     # customer's order is placed and confirmed entirely through this API
-    # response (COD) or the Cashfree Checkout flow (below). The old
-    # admin_notification / whatsapp_message / admin_phone WhatsApp-deep-link
-    # payload that used to send the customer to WhatsApp to "place" the
-    # order has been removed. WhatsApp has since been removed from the app
-    # entirely — there is no longer any WhatsApp bot/webhook, and no
-    # customer-facing WhatsApp notifications fire from update_order() below;
-    # the shopkeeper's package PDF is generated and stored for download from
-    # the admin/shopkeeper panel instead (see _generate_shopkeeper_package_pdf).
+    # response (COD) or the Cashfree Checkout flow (below). WhatsApp has
+    # since been removed from the app entirely — the shopkeeper's package
+    # PDF is generated and stored for download from the admin/shopkeeper
+    # panel instead (see _generate_shopkeeper_package_pdf).
     if order.payment_method == "cod":
         return {
             "success": True,
-            "order_id": new_order["id"],
+            "order_id": first_order_id,
+            "order_ids": all_order_ids,
+            "checkout_group_id": checkout_group_id,
             "payment_method": "cod",
-            "product_image": main_image_url,
+            "product_image": main_image_url_for_response,
         }
 
     # ── Cashfree: hand off to the existing payments router ──────────────
@@ -634,22 +773,9 @@ async def create_order(order: OrderRequest, request: Request, customer=Depends(r
     # and no order-status transitions of its own beyond what was already
     # written above (payment_status="awaiting_payment"). It only calls the
     # already-built, already-tested create_payment_session() from
-    # routers/payments.py — the single owner of all Cashfree logic.
-    #
-    # Called as a direct function call rather than a real HTTP round-trip
-    # to POST /api/payments/cashfree/create-session: it's the same request
-    # (so the same customer/request context) and the same process, so an
-    # actual self-HTTP-call would need BASE_URL configured to reach itself,
-    # would re-forward cookies for no benefit (we already have `customer`
-    # from require_customer right here), and adds a needless network hop
-    # inside a request that's still holding the DB writes above. This still
-    # satisfies "only call into the existing router" — zero Cashfree logic
-    # is reimplemented here, create_payment_session's own auth (Depends
-    # (require_customer)), rate limit, and error handling all still apply
-    # exactly as they do when the frontend calls that endpoint directly
-    # (e.g. for a payment retry). If you'd rather this be a literal HTTP
-    # call instead, that's a one-line swap to httpx.post(...) — happy to
-    # make that change if you prefer it.
+    # routers/payments.py, which sums our_price + delivery_fee across every
+    # row sharing this checkout_group_id — already correct for a multi-row
+    # group with no changes needed there.
     session_result = await create_payment_session(
         CreateSessionRequest(checkout_group_id=checkout_group_id),
         request,
@@ -658,14 +784,15 @@ async def create_order(order: OrderRequest, request: Request, customer=Depends(r
 
     return {
         "success": True,
-        "order_id": new_order["id"],
+        "order_id": first_order_id,
+        "order_ids": all_order_ids,
         "payment_method": "cashfree",
         "checkout_group_id": checkout_group_id,
         "payment_session_id": session_result["payment_session_id"],
         "cashfree_order_id": session_result["cashfree_order_id"],
         "amount": session_result["amount"],
         "cashfree_env": session_result["cashfree_env"],
-        "product_image": main_image_url,
+        "product_image": main_image_url_for_response,
     }
 
 

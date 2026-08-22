@@ -62,12 +62,12 @@
           <thead>
             <tr>
               <th>Order</th><th>Customer</th><th>Product</th>
-              <th>Amount</th><th>Profit</th><th>Payment</th>
+              <th>Amount</th><th>Profit</th><th>Delivery</th><th>Payment</th>
               <th>Status</th><th>Shipping</th><th>Date</th><th>Actions</th>
             </tr>
           </thead>
           <tbody id="orders-body">
-            <tr><td colspan="10" style="text-align:center;padding:32px;color:var(--muted)">Loading...</td></tr>
+            <tr><td colspan="11" style="text-align:center;padding:32px;color:var(--muted)">Loading...</td></tr>
           </tbody>
         </table>
       </div>
@@ -164,9 +164,22 @@ async function loadOrders() {
     const orders = await apiFetch(url);
     const body = document.getElementById("orders-body");
     if (!orders.length) {
-      body.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:32px;color:var(--muted)">No orders found</td></tr>';
+      body.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:32px;color:var(--muted)">No orders found</td></tr>';
       return;
     }
+
+    // Group by checkout_group_id purely to know "how many items were in
+    // this checkout" for the Delivery column below — every row already
+    // came back flat from the API, this is just a client-side tally.
+    const groupCounts = {};
+    orders.forEach(o => {
+      const g = o.checkout_group_id || o.id; // fall back to its own id if ungrouped (older rows)
+      groupCounts[g] = (groupCounts[g] || 0) + 1;
+    });
+    // Must mirror ITEM_SURCHARGE_FOR_SECOND_ITEM in routers/orders.py —
+    // used only to label what a 1-item checkout avoided paying.
+    const SINGLE_ITEM_SAVINGS = 11;
+
     body.innerHTML = orders.map(o => `
       <tr>
         <td style="font-family:monospace;font-size:0.75rem">
@@ -190,6 +203,19 @@ async function loadOrders() {
         </td>
         <td><strong>${formatPrice(o.our_price)}</strong></td>
         <td style="color:var(--success);font-weight:700">+${formatPrice(o.profit)}</td>
+        <td style="font-size:0.75rem">
+          ${(() => {
+            const itemCount = groupCounts[o.checkout_group_id || o.id] || 1;
+            if (o.delivery_fee && o.delivery_fee > 0) {
+              return `<strong>${formatPrice(o.delivery_fee)}</strong><br><span style="color:var(--muted)">${itemCount} item${itemCount > 1 ? 's' : ''}</span>`
+                + (itemCount === 1 ? `<br><span class="badge badge-success" style="margin-top:2px">💰 Saved ${formatPrice(SINGLE_ITEM_SAVINGS)}</span>` : '');
+            }
+            // delivery_fee is 0 on every row except the first in its
+            // checkout group — the group's total fee is shown on that
+            // row only, so this one is genuinely part of the same shipment.
+            return itemCount > 1 ? `<span style="color:var(--muted)">— (part of ${itemCount}-item order)</span>` : `<span style="color:var(--muted)">—</span>`;
+          })()}
+        </td>
         <td>
           <span class="badge badge-${o.payment_type === 'upi' ? 'primary' : 'warning'}">${(o.payment_type||'').toUpperCase()}</span><br>
           <span style="font-size:0.75rem;color:var(--muted)">${o.payment_status||''}</span>
