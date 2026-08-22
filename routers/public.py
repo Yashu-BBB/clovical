@@ -146,6 +146,23 @@ async def robots_txt():
     return Response(content="\n".join(lines), media_type="text/plain")
 
 
+# ─── Favicon at root scope ──────────────────────────────────────────────
+# The file physically lives at static/images/favicon.ico, but browsers and
+# crawlers (including Google's) request /favicon.ico at the site root
+# directly, regardless of what the <link rel="icon"> tags in <head> say.
+# Serving it here as well as via /static ensures that root-level request
+# resolves instead of 404ing.
+@router.get("/favicon.ico")
+async def favicon_ico():
+    with open("static/images/favicon.ico", "rb") as f:
+        content = f.read()
+    return Response(
+        content=content,
+        media_type="image/x-icon",
+        headers={"Cache-Control": "public, max-age=604800"},
+    )
+
+
 # ─── Push notifications: service worker at root scope ─────────────────────
 # The file physically lives at static/sw.js, but a service worker can only
 # control paths at or below the URL it's served from. Serving it here at
