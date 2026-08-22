@@ -148,11 +148,6 @@ async function loadAnalytics() {
       <div class="stat-card">
         <div class="stat-label">This Month</div>
         <div class="stat-value">${formatPrice(d.earnings.this_month_earned)}</div>
-      </div>
-      <div class="stat-card amber">
-        <div class="stat-label">Payout Due</div>
-        <div class="stat-value">${formatPrice(d.earnings.pending_payout)}</div>
-        <div class="stat-note">${d.earnings.pending_payout_note}</div>
       </div>`;
 
     if (earningsChart) earningsChart.destroy();

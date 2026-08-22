@@ -162,23 +162,6 @@ async def update_my_stock(product_id: str, data: ShopkeeperStockUpdate, shopkeep
 # to shopkeeper["shopkeeper_id"] and built only from shopkeeper_price — the
 # fields selected from `orders` never include our_price/profit, and no
 # other shopkeeper's or customer's data is ever touched.
-#
-# NOTE — "pending payout" (see PENDING_PAYOUT_NOTE below): the schema has
-# no payout/settlement-tracking field anywhere (checked the `orders` table
-# and every schema_*.sql migration — there is no settled_at / payout_status
-# / paid_out column). Per the brief, this is approximated as delivered
-# orders whose customer payment has already been collected (payment_status
-# in received/verified). Because nothing in the schema is ever marked
-# "settled to shopkeeper", this number is really "total collected on your
-# behalf so far" — it will NOT shrink once Clovical actually pays a
-# shopkeeper out, since there's nowhere to record that a payout happened.
-# Real "amount still owed" tracking needs a new column/table before this
-# figure can be trusted as anything more than an upper bound.
-PENDING_PAYOUT_NOTE = (
-    "Clovical doesn't yet track shopkeeper payouts as a separate step, so "
-    "this shows everything collected from your delivered orders — it won't "
-    "go down after a real payout until payout tracking is added."
-)
 
 # product/status/payment fields only — no our_price, no profit, no customer
 # name/phone/address. Mirrors the field list already used by GET
@@ -188,7 +171,6 @@ SHOPKEEPER_ORDER_ANALYTICS_FIELDS = "id,product_id,product_name,size,color,shopk
 # "Sold"/"active" for sales-performance purposes mirrors the admin
 # analytics overview's own definition of an active order.
 _INACTIVE_ORDER_STATUSES = ("cancelled", "refunded")
-_PAID_STATUSES = ("received", "verified")
 
 
 def _day_str(dt: datetime) -> str:
@@ -259,12 +241,10 @@ async def my_analytics(shopkeeper=Depends(require_shopkeeper)):
         # Earnings only ever count DELIVERED orders, per the brief — a
         # shipped-but-not-delivered order isn't "earned" yet.
         delivered = [o for o in all_orders if o.get("status") == "delivered"]
-        paid_delivered = [o for o in delivered if o.get("payment_status") in _PAID_STATUSES]
 
         # ── 1. EARNINGS ─────────────────────────────────────────────────
         total_earned = sum(_price(o) for o in delivered)
         month_earned = sum(_price(o) for o in delivered if created(o) >= start_month.isoformat())
-        pending_payout = sum(_price(o) for o in paid_delivered)
 
         # Daily trend for the last 30 days. Bucketed by the order's
         # created_at (there's no separate "delivered_at" timestamp in the
@@ -327,8 +307,6 @@ async def my_analytics(shopkeeper=Depends(require_shopkeeper)):
             "earnings": {
                 "total_earned": round(total_earned, 2),
                 "this_month_earned": round(month_earned, 2),
-                "pending_payout": round(pending_payout, 2),
-                "pending_payout_note": PENDING_PAYOUT_NOTE,
                 "trend_30d": trend_30d,
             },
             "sales": {
