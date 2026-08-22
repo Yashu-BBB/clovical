@@ -45,6 +45,19 @@
     @media (max-width: 480px) {
       .stock-card { flex-direction:column; }
     }
+
+    @media (max-width: 760px) {
+      .filter-bar input { max-width:none; font-size:16px; min-height:44px; padding:10px 14px; }
+
+      /* Bigger +/- tap targets and non-zooming number inputs */
+      .stepper button { width:40px; height:40px; font-size:1.25rem; }
+      .stepper input { width:56px; font-size:16px; padding:8px 4px; }
+
+      .stock-card { padding:14px; }
+      .stock-thumb, .thumb-placeholder { width:56px; height:70px; }
+      .stock-row-group { gap:12px; }
+      .stock-variant { padding:8px 12px; }
+    }
   </style>
 </head>
 <body>

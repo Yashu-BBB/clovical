@@ -105,6 +105,15 @@
   .notif-item-msg { font-size: 0.78rem; color: var(--muted, #666); line-height: 1.4; }
   .notif-item-time { font-size: 0.7rem; color: #B0B0B0; margin-top: 4px; }
   .notif-unread-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:#E74C3C; margin-right:6px; vertical-align:middle; }
+
+  @media (max-width: 900px) {
+    /* Slightly larger bell/notification tap target and a comfortable
+       logout row on touch screens */
+    .notif-bell-btn { width:40px; height:40px; font-size:1.1rem; }
+    #sidebar .logout-btn { padding:10px 0; font-size:0.9rem; }
+    #sidebar .nav-item { padding:14px 20px; }
+    .notif-dropdown { max-width:88vw; }
+  }
 </style>
 
 <script>

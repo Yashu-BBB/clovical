@@ -96,6 +96,39 @@
       padding: 4px 6px; font-size: 0.82rem; font-family: inherit;
     }
     .variant-stock-empty { font-size: 0.8rem; color: var(--muted); }
+
+    /* ─── MOBILE ─────────────────────────────────────────────────────── */
+    @media (max-width: 760px) {
+      /* Bigger, centered thumbnail at the top of each stacked request card */
+      .table-card .req-thumb,
+      .table-card .thumb-placeholder { width: 64px; height: 80px; }
+      .table-card td.td-plain { justify-content: center; padding: 14px 0 8px; }
+
+      /* Size/gender/type chips get comfortable tap targets on touch screens */
+      .size-chip { padding: 9px 16px; font-size: 0.9rem; }
+      .size-type-tab { padding: 8px 16px; font-size: 0.82rem; }
+      .gender-opt { padding: 16px 12px; }
+
+      /* Front/back photo uploader: full-width stacked slots instead of a
+         tight two-up row, so nothing gets squeezed or needs zooming */
+      .two-photo-uploader { gap: 12px; }
+      .photo-slot { min-width: 0; max-width: none; flex: 1 1 140px; }
+      .photo-drop { aspect-ratio: 4/3; }
+
+      /* Per-size stock rows: full-width rows are easier to tap/enter than
+         a wrapped row of tiny chips */
+      .variant-stock-row { flex: 1 1 100%; }
+      .variant-stock-row input[type="number"] { width: 72px; min-height: 38px; font-size: 16px; }
+
+      /* Size chart editor already scrolls horizontally (table-wrap) by
+         design — it's a dense grid of measurements, not a data list, so
+         horizontal scroll here is expected/acceptable rather than a bug */
+
+      /* Submit/Cancel: stack full-width instead of a cramped side-by-side
+         row, so both remain comfortably tappable */
+      .request-form-actions { flex-direction: column; }
+      .request-form-actions .btn-outline { width: 100%; }
+    }
   </style>
 </head>
 <body>
@@ -113,8 +146,8 @@
     </div>
 
     <div class="admin-content">
-      <div class="table-wrap">
-        <table>
+      <div class="table-wrap table-card-wrap">
+        <table class="table-card">
           <thead><tr><th>Photo</th><th>Product</th><th>Category</th><th>Your Price</th><th>Stock</th><th>Status</th><th>Submitted</th></tr></thead>
           <tbody id="requests-body"><tr><td colspan="7" style="text-align:center;padding:32px;color:var(--muted)">Loading...</td></tr></tbody>
         </table>
@@ -256,7 +289,7 @@
         <input type="file" id="back-file-picker" accept="image/jpeg,image/png,image/webp" style="display:none" onchange="onPhotoPicked('back', this)">
       </div>
 
-      <div style="display:flex;gap:12px;margin-top:8px">
+      <div class="request-form-actions" style="display:flex;gap:12px;margin-top:8px">
         <button type="submit" class="btn btn-primary btn-lg" style="flex:1" id="submit-btn">Submit for Review</button>
         <button type="button" class="btn btn-outline" onclick="closeAddModal()">Cancel</button>
       </div>
@@ -283,13 +316,13 @@ async function loadRequests() {
     }
     body.innerHTML = reqs.map(r => `
       <tr>
-        <td>${r.shopkeeper_image_front_thumb ? `<img class="req-thumb" src="${r.shopkeeper_image_front_thumb}">` : '<div class="thumb-placeholder">—</div>'}</td>
-        <td><strong>${r.name}</strong></td>
-        <td>${r.category || '—'}</td>
-        <td>₹${Number(r.shopkeeper_price).toLocaleString('en-IN')}</td>
-        <td>${r.stock}</td>
-        <td><span class="badge badge-${r.status === 'accepted' ? 'success' : r.status === 'rejected' ? 'danger' : 'gold'}">${r.status}</span></td>
-        <td>${new Date(r.created_at).toLocaleDateString('en-IN')}</td>
+        <td class="td-plain">${r.shopkeeper_image_front_thumb ? `<img class="req-thumb" src="${r.shopkeeper_image_front_thumb}">` : '<div class="thumb-placeholder">—</div>'}</td>
+        <td data-label="Product"><strong>${r.name}</strong></td>
+        <td data-label="Category">${r.category || '—'}</td>
+        <td data-label="Your Price">₹${Number(r.shopkeeper_price).toLocaleString('en-IN')}</td>
+        <td data-label="Stock">${r.stock}</td>
+        <td data-label="Status"><span class="badge badge-${r.status === 'accepted' ? 'success' : r.status === 'rejected' ? 'danger' : 'gold'}">${r.status}</span></td>
+        <td data-label="Submitted">${new Date(r.created_at).toLocaleDateString('en-IN')}</td>
       </tr>
     `).join('');
   } catch(e) {

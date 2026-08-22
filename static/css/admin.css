@@ -72,13 +72,20 @@
 .page-header h2 { font-size: 1.4rem; font-weight: 800; }
 
 /* ─── MOBILE SIDEBAR ──────────────────────────────── */
-.sidebar-toggle { display: none; background: none; border: none; font-size: 1.5rem; cursor: pointer; }
+.sidebar-toggle {
+  display: none; background: none; border: none; font-size: 1.4rem; cursor: pointer;
+  width: 44px; height: 44px; align-items: center; justify-content: center;
+  border-radius: 8px; flex-shrink: 0; color: #1A1A1A;
+}
+.sidebar-toggle:active { background: rgba(0,0,0,.06); }
 @media (max-width: 900px) {
-  .sidebar { transform: translateX(-100%); }
+  .sidebar { transform: translateX(-100%); width: min(240px, 82vw); }
   .sidebar.open { transform: translateX(0); }
   .admin-main { margin-left: 0; }
-  .sidebar-toggle { display: block; }
+  .sidebar-toggle { display: flex; }
   .admin-content { padding: 16px; }
+  .admin-topbar { padding: 0 12px; }
+  .admin-topbar-title { font-size: 1rem; }
   .stat-grid { grid-template-columns: repeat(2, 1fr); }
 
   /* Solid dimming backdrop behind the sidebar when open on mobile, so the
@@ -94,4 +101,10 @@
     background: rgba(0,0,0,0.45);
     z-index: 45; /* above admin-main's own content, below .sidebar (z-index:50) */
   }
+}
+
+@media (max-width: 400px) {
+  /* Very narrow phones (e.g. 360px) — two stat cards side by side gets
+     cramped, so stack them for legibility instead of shrinking further. */
+  .stat-grid { grid-template-columns: 1fr; }
 }

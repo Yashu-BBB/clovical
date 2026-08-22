@@ -16,6 +16,22 @@
     .btn-spinner { display: inline-block; width: 11px; height: 11px; border: 2px solid rgba(255,255,255,0.35); border-top-color: #FFFFFF; border-radius: 50%; margin-right: 6px; vertical-align: -1px; animation: btn-spin 0.7s linear infinite; }
     .btn-outline .btn-spinner { border-color: rgba(10,10,10,0.25); border-top-color: #0A0A0A; }
     @keyframes btn-spin { to { transform: rotate(360deg); } }
+
+    @media (max-width: 760px) {
+      /* Filter dropdown: full-width and touch-sized instead of a small
+         inline control */
+      .filter-bar { gap: 10px; }
+      .filter-bar select {
+        width: 100%; padding: 12px 14px; font-size: 16px; min-height: 44px;
+      }
+      /* Product cell (thumb + name) reads better full-width, without a
+         redundant "Product" label crowding it */
+      .table-card td[data-label="Product"] { justify-content: flex-start; }
+      .table-card .order-thumb,
+      .table-card .order-thumb-placeholder { width: 46px; height: 46px; }
+      /* Action buttons: full-width stacked, comfortably tappable */
+      .table-card td.td-actions .btn { min-width: 0; flex: 1 1 100%; }
+    }
   </style>
 </head>
 <body>
@@ -43,8 +59,8 @@
         </select>
       </div>
 
-      <div class="table-wrap">
-        <table>
+      <div class="table-wrap table-card-wrap">
+        <table class="table-card">
           <thead>
             <tr><th>Product</th><th>Size / Color</th><th>You Get</th><th>Payment</th><th>Status</th><th>Date</th><th>Actions</th></tr>
           </thead>
@@ -82,16 +98,16 @@ async function loadOrders() {
     }
     body.innerHTML = orders.map(o => `
       <tr>
-        <td style="display:flex;align-items:center;gap:8px">
+        <td data-label="Product" style="display:flex;align-items:center;gap:8px">
           ${o.product_image ? `<img class="order-thumb" src="${escapeHtml(o.product_image)}">` : '<div class="order-thumb-placeholder">—</div>'}
           <strong>${escapeHtml(o.product_name)}</strong>
         </td>
-        <td>${escapeHtml(o.size)} / ${escapeHtml(o.color)}</td>
-        <td><strong>₹${Number(o.shopkeeper_price).toLocaleString('en-IN')}</strong></td>
-        <td>${(o.payment_type || '—').toUpperCase()} · <span class="badge badge-${o.payment_status === 'received' || o.payment_status === 'verified' ? 'success' : 'muted'}">${o.payment_status}</span></td>
-        <td><span class="badge badge-gold">${o.status}</span></td>
-        <td>${new Date(o.created_at).toLocaleDateString('en-IN')}</td>
-        <td style="display:flex;gap:6px;flex-wrap:wrap">
+        <td data-label="Size / Color">${escapeHtml(o.size)} / ${escapeHtml(o.color)}</td>
+        <td data-label="You Get"><strong>₹${Number(o.shopkeeper_price).toLocaleString('en-IN')}</strong></td>
+        <td data-label="Payment">${(o.payment_type || '—').toUpperCase()} · <span class="badge badge-${o.payment_status === 'received' || o.payment_status === 'verified' ? 'success' : 'muted'}">${o.payment_status}</span></td>
+        <td data-label="Status"><span class="badge badge-gold">${o.status}</span></td>
+        <td data-label="Date">${new Date(o.created_at).toLocaleDateString('en-IN')}</td>
+        <td class="td-actions" style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="btn btn-outline btn-sm" onclick="viewOrderDetail('${o.id}')">View Details</button>
           <button class="btn btn-outline btn-sm" onclick="downloadOrderPDF('${o.id}', this)">Generate PDF</button>
           ${o.package_pdf_status === 'ready' ? `<button class="btn btn-outline btn-sm" onclick="downloadPackagePDF('${o.id}', this)">📦 Package PDF</button>` : ''}

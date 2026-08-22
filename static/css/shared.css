@@ -638,6 +638,19 @@ textarea.form-control { resize: vertical; min-height: 100px; }
 .modal-close:hover { color: var(--black); }
 .modal-close svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.5; }
 
+@media (max-width: 640px) {
+  .modal-overlay { padding: 0; align-items: flex-end; }
+  .modal {
+    max-width: 100% !important;
+    width: 100%;
+    max-height: 92vh;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    padding: 20px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+  }
+  .modal-header { margin-bottom: 18px; }
+  .modal-title { font-size: 1.1rem; }
+}
+
 /* ─── TABLE ──────────────────────────────────────────────────────────── */
 .table-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); }
 table { width: 100%; border-collapse: collapse; background: #FFFFFF; }
@@ -660,6 +673,57 @@ td {
   vertical-align: middle;
 }
 tr:hover td { background: var(--black-3); }
+
+/* ─── RESPONSIVE TABLE → CARD (opt-in via .table-card) ─────────────────
+   Add class="table-card" to a <table> to make it reflow into stacked
+   cards on small screens instead of forcing horizontal scroll. Each <td>
+   that should show a label prefixes it via a data-label="..." attribute;
+   cells that shouldn't show a label (e.g. a photo or an actions row) can
+   opt out with class="td-plain" or class="td-actions".
+   This is fully opt-in and does not touch the base .table-wrap/table
+   rules used elsewhere (e.g. the admin panel), so nothing else changes. */
+@media (max-width: 760px) {
+  .table-card-wrap { overflow-x: visible; border: none; }
+  table.table-card { border: none; }
+  table.table-card thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  table.table-card, table.table-card tbody, table.table-card tr, table.table-card td {
+    display: block; width: 100%;
+  }
+  table.table-card tr {
+    background: #FFFFFF;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 4px 16px;
+    margin-bottom: 12px;
+  }
+  table.table-card tr:hover td { background: transparent; }
+  table.table-card td {
+    border: none;
+    border-bottom: 1px solid #F2F2F2;
+    padding: 10px 0;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    text-align: right;
+  }
+  table.table-card td:last-child { border-bottom: none; }
+  table.table-card td[data-label]::before {
+    content: attr(data-label);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    flex-shrink: 0;
+    text-align: left;
+  }
+  table.table-card td.td-plain { justify-content: flex-start; text-align: left; }
+  table.table-card td.td-actions { justify-content: flex-start; flex-wrap: wrap; gap: 8px; padding-top: 12px; }
+  table.table-card td.td-actions .btn { flex: 1; min-width: 120px; }
+}
 
 /* ─── TOAST ──────────────────────────────────────────────────────────── */
 #toast-container {
@@ -801,6 +865,30 @@ footer {
 @media (max-width: 420px) {
   .product-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
   .product-card-name { font-size: 0.85rem; }
+}
+
+/* ─── MOBILE TOUCH TARGETS & ZOOM PREVENTION ────────────────────────────
+   Applies everywhere (customer site, admin, shopkeeper) — makes inputs,
+   buttons and links comfortable to tap/type into on phone-sized screens
+   without changing their desktop appearance. */
+@media (max-width: 768px) {
+  /* iOS Safari auto-zooms the page on focus of any input under 16px —
+     force form fields to 16px on mobile so typing never triggers zoom. */
+  .form-control,
+  select.form-control,
+  textarea.form-control,
+  input[type="text"],
+  input[type="number"],
+  input[type="password"],
+  input[type="email"],
+  input[type="search"] {
+    font-size: 16px;
+  }
+
+  /* Comfortable minimum tap target (~44px) on primary interactive elements. */
+  .btn { min-height: 44px; }
+  .btn-sm { min-height: 40px; }
+  .form-control { min-height: 44px; }
 }
 /* ─── DISCOUNT / MRP PRICING ──────────────────────────────────────────── */
 .price-current {
