@@ -13,7 +13,7 @@ router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 templates.env.globals["ASSET_V"] = ASSET_VERSION
 
-SITE_URL = "https://clovical.in"
+SITE_URL = "https://www.clovical.in"
 
 
 def render(template: str, request: Request, **ctx):
