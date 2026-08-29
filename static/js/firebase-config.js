@@ -33,7 +33,15 @@ const firebaseConfig = {
 // Service workers can't use ES module `export` without extra config, and
 // this same file is loaded both as a plain <script> (main thread) and via
 // importScripts() (service worker) — a bare `const` in global scope works
-// in both contexts, so no export statement here on purpose.
+// as a plain identifier in both contexts (sw.js and push-notifications.js's
+// SW code both just reference `firebaseConfig` directly), BUT a top-level
+// `const` does NOT attach itself to `window`/`self` as a property. Code
+// that checks `window.firebaseConfig` (see push-notifications.js's
+// ensureFirebaseLoaded()) needs it explicitly assigned as a property, not
+// just declared. `self` exists in both the main thread and a service
+// worker (aliasing `window` on the main thread), so this one line covers
+// both without an environment check.
+self.firebaseConfig = firebaseConfig;
    // apiKey: "AIzaSyDcQVI1MpNiZWoOPVKatGZNu1O7l6LlYm0",
    // authDomain: "clovical-1bae5.firebaseapp.com",
    // projectId: "clovical-1bae5",
