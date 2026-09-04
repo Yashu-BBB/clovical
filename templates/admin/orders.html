@@ -61,13 +61,13 @@
         <table>
           <thead>
             <tr>
-              <th>Order</th><th>Customer</th><th>Product</th>
+              <th>Order</th><th>Customer</th><th>Product</th><th>Shop</th>
               <th>Amount</th><th>Profit</th><th>Delivery</th><th>Payment</th>
-              <th>Status</th><th>Shipping</th><th>Date</th><th>Actions</th>
+              <th>Status</th><th>Shipping</th><th>Packing</th><th>Date</th><th>Actions</th>
             </tr>
           </thead>
           <tbody id="orders-body">
-            <tr><td colspan="11" style="text-align:center;padding:32px;color:var(--muted)">Loading...</td></tr>
+            <tr><td colspan="13" style="text-align:center;padding:32px;color:var(--muted)">Loading...</td></tr>
           </tbody>
         </table>
       </div>
@@ -155,6 +155,10 @@
 // backend /ship endpoint uses — no extra fetch needed to know this up front.
 const NIMBUSPOST_CONFIGURED = {{ 'true' if nimbuspost_configured else 'false' }};
 const STATUS_COLORS = { pending:'warning', confirmed:'primary', shipped:'primary', delivered:'success', cancelled:'danger', refunded:'muted' };
+// Shopkeeper-only physical prep state — separate from the order lifecycle
+// `status` above. Admin sees it here read-only; only the shopkeeper's own
+// dropdown (templates/shopkeeper/orders.html) can change it.
+const PACKING_COLORS = { unpacked:'muted', packed:'warning', shipped:'success' };
 let currentOrderId = null;
 
 async function loadOrders() {
@@ -164,7 +168,7 @@ async function loadOrders() {
     const orders = await apiFetch(url);
     const body = document.getElementById("orders-body");
     if (!orders.length) {
-      body.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:32px;color:var(--muted)">No orders found</td></tr>';
+      body.innerHTML = '<tr><td colspan="13" style="text-align:center;padding:32px;color:var(--muted)">No orders found</td></tr>';
       return;
     }
 
@@ -201,6 +205,9 @@ async function loadOrders() {
           ${o.tracking_id ? `<br><span style="font-size:0.75rem">📦 ${escapeHtml(o.tracking_id)}</span>` : ''}
           ${o.courier_name ? `<br><span style="font-size:0.7rem;color:var(--muted)">${escapeHtml(o.courier_name)}</span>` : ''}
         </td>
+        <td style="font-size:0.8rem">
+          ${o.shop_name ? `${escapeHtml(o.shop_name)}${o.shop_city ? `, ${escapeHtml(o.shop_city)}` : ''}` : `<span style="color:var(--muted)">—</span>`}
+        </td>
         <td><strong>${formatPrice(o.our_price)}</strong></td>
         <td style="color:var(--success);font-weight:700">+${formatPrice(o.profit)}</td>
         <td style="font-size:0.75rem">
@@ -227,6 +234,9 @@ async function loadOrders() {
           ${o.nimbuspost_awb
             ? `<span class="badge badge-success">${o.shipping_status || 'created'}</span>`
             : (o.status === 'confirmed' ? '<span class="badge badge-warning">Not shipped</span>' : '<span style="color:var(--muted)">—</span>')}
+        </td>
+        <td style="font-size:0.75rem">
+          <span class="badge badge-${PACKING_COLORS[o.packing_status] || 'muted'}" title="Set by the shopkeeper — read-only here">${(o.packing_status || 'unpacked').replace(/^./, c => c.toUpperCase())}</span>
         </td>
         <td style="font-size:0.8rem;color:var(--muted)">${new Date(o.created_at).toLocaleDateString('en-IN')}</td>
         <td>
@@ -537,7 +547,7 @@ async function buildOrderPDF(data) {
   doc.setTextColor(...GRAY);
   doc.text(`Category: ${data.product.category || "—"}`, textX, py); py += 5;
   doc.text(`Size: ${data.product.size || "—"}    Color: ${data.product.color || "—"}`, textX, py); py += 5;
-  doc.text(`Shopkeeper Code: ${data.product.shopkeeper_code || "—"}`, textX, py); py += 5;
+  doc.text(`Shopkeeper: ${data.product.shop_name || "—"}${data.product.shop_city ? ", " + data.product.shop_city : ""} (Code: ${data.product.shopkeeper_code || "—"})`, textX, py); py += 5;
 
   doc.setFont("helvetica", "bold");
   doc.setTextColor(...BLACK);

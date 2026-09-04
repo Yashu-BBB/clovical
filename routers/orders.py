@@ -67,6 +67,14 @@ class StatusUpdate(BaseModel):
     refund_status: str | None = None
 
 
+class PackingStatusUpdate(BaseModel):
+    # A shopkeeper-only, physical-preparation concept — deliberately separate
+    # from the order lifecycle `status` field above (pending/confirmed/
+    # shipped/delivered/cancelled/refunded), which only admin controls via
+    # update_order(). This never touches `status`.
+    packing_status: Literal["unpacked", "packed", "shipped"]
+
+
 # ─── NimbusPost auto-ship helpers ──────────────────────────────────────────
 
 async def _is_auto_ship_enabled() -> bool:
@@ -1007,7 +1015,31 @@ async def admin_list_orders(
         if status:
             q = q.eq("status", status)
         res = await run_query(q)
-        return res.data or []
+        orders = res.data or []
+
+        # Denormalize shop_name/city from the shopkeepers table for the
+        # admin table's "Shop" column. orders.shopkeeper_id has no FK
+        # relationship defined in the schema, so this is a manual bulk
+        # lookup + merge rather than a PostgREST embed — one extra query
+        # for the whole page, not one per order.
+        shopkeeper_ids = {o["shopkeeper_id"] for o in orders if o.get("shopkeeper_id")}
+        shop_by_id = {}
+        if shopkeeper_ids:
+            sk_res = await run_query(
+                supabase_admin.table("shopkeepers").select("id,shop_name,city").in_("id", list(shopkeeper_ids))
+            )
+            shop_by_id = {s["id"]: s for s in (sk_res.data or [])}
+
+        for o in orders:
+            shop = shop_by_id.get(o.get("shopkeeper_id"))
+            o["shop_name"] = shop.get("shop_name") if shop else None
+            o["shop_city"] = shop.get("city") if shop else None
+            # packing_status already comes back from select("*") once the
+            # column exists — defaulted here only for rows created before
+            # the migration ran.
+            o.setdefault("packing_status", "unpacked")
+
+        return orders
     except Exception as e:
         logger.error(f"Admin: list orders failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch orders")
@@ -1245,7 +1277,7 @@ async def shopkeeper_list_orders(status: str | None = None, shopkeeper=Depends(r
     try:
         q = (
             supabase_admin.table("orders")
-            .select("id,product_name,product_image,size,color,shopkeeper_price,payment_type,payment_status,status,tracking_id,courier_name,package_pdf_status,created_at")
+            .select("id,product_name,product_image,size,color,shopkeeper_price,payment_type,payment_status,status,tracking_id,courier_name,package_pdf_status,packing_status,created_at")
             .eq("shopkeeper_id", shopkeeper["shopkeeper_id"])
             .order("created_at", desc=True)
         )
@@ -1256,6 +1288,42 @@ async def shopkeeper_list_orders(status: str | None = None, shopkeeper=Depends(r
     except Exception as e:
         logger.error(f"Shopkeeper: list orders failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch orders")
+
+
+@router.put("/shopkeeper/{order_id}/packing-status")
+async def update_packing_status(order_id: str, update: PackingStatusUpdate, shopkeeper=Depends(require_shopkeeper)):
+    """
+    Lets a shopkeeper mark their own order's physical packing state
+    (Unpacked/Packed/Shipped) — a separate, shopkeeper-only concept from
+    the order lifecycle `status` field, which only admin controls via
+    PUT /admin/{order_id} above. This endpoint only ever writes
+    packing_status, never `status`.
+
+    Ownership: same pattern as cancel_order()/every other owner-scoped
+    endpoint here — fetch filtered by .eq(shopkeeper_id) first (404 if it
+    doesn't match this shopkeeper's own order), then update by id alone.
+    """
+    try:
+        current = await run_query(
+            supabase_admin.table("orders").select("id")
+            .eq("id", order_id).eq("shopkeeper_id", shopkeeper["shopkeeper_id"]).single()
+        )
+        if not current.data:
+            raise HTTPException(status_code=404, detail="Order not found")
+
+        await run_query(
+            supabase_admin.table("orders").update({"packing_status": update.packing_status}).eq("id", order_id)
+        )
+        logger.info(f"Order {order_id} packing_status set to {update.packing_status} by shopkeeper {shopkeeper['shopkeeper_id']}")
+
+        await cache_delete("admin:dashboard")
+
+        return {"success": True, "packing_status": update.packing_status}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update packing_status for order {order_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to update packing status")
 
 
 @router.get("/shopkeeper/{order_id}/pdf-data")

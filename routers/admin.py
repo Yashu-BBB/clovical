@@ -183,6 +183,22 @@ async def order_pdf_data(order_id: str, admin=Depends(require_admin)):
             except Exception as e:
                 logger.warning(f"Could not fetch product category for order {order_id}: {e}")
 
+        # Shop name/city aren't denormalized onto the order row either —
+        # same best-effort pattern as category above, feeding the PDF's
+        # "Shopkeeper: <name>, <city> (Code: <code>)" line.
+        shop_name = None
+        shop_city = None
+        if order.get("shopkeeper_id"):
+            try:
+                sk_res = await run_query(
+                    supabase_admin.table("shopkeepers").select("shop_name,city").eq("id", order["shopkeeper_id"]).maybe_single()
+                )
+                if sk_res.data:
+                    shop_name = sk_res.data.get("shop_name")
+                    shop_city = sk_res.data.get("city")
+            except Exception as e:
+                logger.warning(f"Could not fetch shopkeeper info for order {order_id}: {e}")
+
         delivery_fee = order.get("delivery_fee") or 0
         amount_paid = (order.get("our_price") or 0) + delivery_fee
 
@@ -199,6 +215,8 @@ async def order_pdf_data(order_id: str, admin=Depends(require_admin)):
                 "size": order.get("size"),
                 "color": order.get("color"),
                 "shopkeeper_code": order.get("shopkeeper_code"),
+                "shop_name": shop_name,
+                "shop_city": shop_city,
                 "our_price": order.get("our_price"),
                 "profit": order.get("profit"),
             },
