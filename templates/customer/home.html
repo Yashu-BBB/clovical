@@ -654,7 +654,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       <p class="hero-sub">Curated fashion for Boys & Girls — from local boutiques, delivered across India.</p>
       <div class="hero-actions">
         <a href="/products?gender=Girls" id="hero-btn-girls" class="btn btn-primary btn-lg">Shop Girls</a>
-        <a href="/products?gender=Boys" class="btn btn-outline btn-lg">Shop Boys</a>
+        <a href="/products?gender=Boys" id="hero-btn-boys" class="btn btn-primary btn-lg">Shop Boys</a>
       </div>
     </div>
   </section>
@@ -871,6 +871,12 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       // Gender toggle tab
       const btnGirls = document.getElementById('btn-Girls');
       if (btnGirls) btnGirls.style.display = enabled ? '' : 'none';
+      // Gender toggle pill wrap — with only one gender currently active
+      // there's nothing to toggle between, so hide the whole pill instead
+      // of forcing an extra tap. Re-adapts automatically once Girls is
+      // switched back on (girls_section_enabled becomes true again).
+      const toggleWrap = document.getElementById('gender-toggle-wrap');
+      if (toggleWrap) toggleWrap.style.display = enabled ? '' : 'none';
       // Girls panel
       const panelGirls = document.getElementById('panel-Girls');
       if (!enabled && panelGirls) {
@@ -920,7 +926,10 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
           grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;padding:48px 0"><svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><h3>No products yet</h3><p>Check back soon for new arrivals</p></div>`;
           return;
         }
-        grid.innerHTML = products.slice(0, 8).map(p => renderProductCard(p)).join('');
+        // Show the full in-stock catalog for this gender, featured items
+        // first (the API already orders featured desc, then created_at
+        // desc for the default/"latest" sort) — no artificial cap.
+        grid.innerHTML = products.map(p => renderProductCard(p)).join('');
       } catch(e) {
         grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><p>Failed to load products</p></div>`;
       }
