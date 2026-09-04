@@ -40,8 +40,8 @@ if (_configured) {
     const link = (payload.data && payload.data.link) || "/";
     self.registration.showNotification(title, {
       body,
-      icon: "/static/images/favicon.svg",
-      badge: "/static/images/favicon.svg",
+      icon: "/static/images/favicon-32x32.png",
+      badge: "/static/images/favicon-32x32.png",
       data: { link },
     });
   });
