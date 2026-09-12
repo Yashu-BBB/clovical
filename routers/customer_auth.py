@@ -194,7 +194,7 @@ def _set_customer_cookie(response: JSONResponse | RedirectResponse, token: str):
         httponly=True,
         secure=True,
         samesite="lax",
-        max_age=3600 * 24 * 7,  # 7 days
+        max_age=3600 * 24 * 90,  # 90 days
         path="/",
     )
 

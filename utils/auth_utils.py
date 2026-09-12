@@ -9,9 +9,9 @@ from fastapi.responses import RedirectResponse
 logger = logging.getLogger(__name__)
 
 SECRET_KEY = os.getenv("SECRET_KEY", "changeme-in-production")
-SESSION_TTL = 3600 * 4  # 4 hours
-SHOPKEEPER_SESSION_TTL = 3600 * 4       # 4 hours
-CUSTOMER_SESSION_TTL = 3600 * 24 * 7  # 7 days, same as admin
+SESSION_TTL = 3600 * 24 * 30  # 30 days
+SHOPKEEPER_SESSION_TTL = 3600 * 24 * 30  # 30 days
+CUSTOMER_SESSION_TTL = 3600 * 24 * 90  # 90 days
 
 if SECRET_KEY == "changeme-in-production":
     logger.critical(

@@ -53,7 +53,7 @@ async def login(req: ShopkeeperLoginRequest, request: Request):
         httponly=True,
         secure=True,
         samesite="lax",
-        max_age=14400
+        max_age=2592000  # 30 days
     )
     return response
 
