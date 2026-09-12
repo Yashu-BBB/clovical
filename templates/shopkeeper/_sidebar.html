@@ -112,7 +112,21 @@
     .notif-bell-btn { width:40px; height:40px; font-size:1.1rem; }
     #sidebar .logout-btn { padding:10px 0; font-size:0.9rem; }
     #sidebar .nav-item { padding:14px 20px; }
-    .notif-dropdown { max-width:88vw; }
+
+    /* On mobile the sidebar itself is only min(240px, 82vw) wide, and the
+       bell sits near its right edge. The desktop dropdown (anchored via
+       left:0 off the bell, up to 320px wide) was extending far past the
+       right edge of the phone screen whenever it opened — a real
+       horizontal-overflow source, not just a tight-fit one. Anchoring it
+       to the viewport instead of the bell keeps it fully on-screen. */
+    .notif-dropdown {
+      position: fixed;
+      left: 12px;
+      right: 12px;
+      top: 72px;
+      width: auto;
+      max-width: none;
+    }
   }
 </style>
 

@@ -11,6 +11,16 @@
   <style>
     .section-head { font-size:1.1rem; font-weight:800; margin:28px 0 14px; padding-bottom:8px; border-bottom:2px solid var(--border); display:flex; align-items:center; gap:8px; }
     .section-head:first-child { margin-top:0; }
+
+    /* .stat-grid/.stat-card come from admin.css and go to a fixed 2-column
+       grid at <=900px. A grid track's min width defaults to the width of
+       its content, so a long unbroken value like "₹1,23,456" in .stat-value
+       (900 weight, 1.7rem) can force that column — and the whole page —
+       wider than the viewport instead of wrapping. min-width:0 lets the
+       track shrink to the column size, and overflow-wrap lets the number
+       itself break onto a second line if it still doesn't fit. */
+    .stat-card { min-width: 0; }
+    .stat-value { overflow-wrap: anywhere; word-break: break-word; }
     .chart-card { background:#fff; border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); padding:18px; margin-bottom:20px; }
     .chart-card h3 { font-size:0.9rem; font-weight:700; margin-bottom:14px; color:var(--text); }
     /* Fixed-height, position:relative wrapper is what lets Chart.js

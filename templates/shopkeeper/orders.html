@@ -34,6 +34,18 @@
       /* Action buttons: full-width stacked, comfortably tappable */
       .table-card td.td-actions .btn,
       .table-card td.td-actions .packing-status-select { min-width: 0; flex: 1 1 100%; }
+      /* The Actions cell's gap is set inline (6px) by the JS that renders
+         each row, which is too tight once the select + buttons stack
+         full-width on mobile — risks misclicks between them. Widen it
+         for touch without touching the JS/markup. */
+      .table-card td.td-actions { gap: 10px !important; }
+      /* .packing-status-select isn't a .form-control, so it misses the
+         site-wide 16px/44px mobile input fix above — below 16px, iOS
+         Safari auto-zooms on focus, and the stock control was shorter
+         than the buttons next to it. */
+      .table-card td.td-actions .packing-status-select {
+        min-height: 44px; font-size: 16px; padding: 10px 12px;
+      }
     }
   </style>
 </head>
