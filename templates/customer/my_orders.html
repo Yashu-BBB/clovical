@@ -125,6 +125,12 @@
       margin-bottom: 28px;
       padding-bottom: 18px;
       border-bottom: 1px dashed var(--border);
+      flex-wrap: wrap;
+    }
+
+    .customer-status-label {
+      min-width: 0;
+      overflow-wrap: anywhere;
     }
 
     /* ─── ORDER LIST (same card language as .summary-card / .order-item
@@ -397,7 +403,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     <!-- Orders — shown only once the customer is signed in -->
     <div class="orders-wrap" id="orders-wrap" style="display:none">
       <div class="customer-status-bar" id="customer-status-bar" style="display:none">
-        <span id="customer-status-label"></span>
+        <span id="customer-status-label" class="customer-status-label"></span>
         <button type="button" class="link-btn" onclick="logoutCustomer()">Log out</button>
       </div>
       <div id="orders-list"></div>

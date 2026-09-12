@@ -13,6 +13,11 @@
     .stock-num-input { width:70px; padding:5px 8px; border:2px solid var(--border); border-radius:6px; text-align:center; font-size:0.9rem; }
     .variant-tags { display:flex; flex-wrap:wrap; gap:4px; font-size:0.75rem; }
     .variant-tags span { background:#F3F0FF; border-radius:5px; padding:1px 6px; }
+
+    @media (max-width: 760px) {
+      .filter-bar input { max-width: none; width: 100%; padding: 12px 14px; font-size: 16px; min-height: 44px; }
+      .table-card td.td-actions .btn { min-width: 0; flex: 1 1 100%; }
+    }
   </style>
 </head>
 <body>
@@ -35,8 +40,8 @@
 
       <div style="font-size:0.82rem;color:var(--muted);margin-bottom:12px">For recording sales made in person at a shopkeeper's shop. Text/number fields only — no photos loaded here.</div>
 
-      <div class="table-wrap">
-        <table>
+      <div class="table-wrap table-card-wrap">
+        <table class="table-card">
           <thead>
             <tr><th>Product</th><th>Shopkeeper</th><th>Category</th><th>Sizes/Colors in Stock</th><th>Overall Stock</th><th>Mark Sold</th></tr>
           </thead>
@@ -78,12 +83,12 @@ function renderTable() {
     const colorTags = Object.entries(p.color_stock || {}).map(([k,v]) => `<span>${k}: ${v}</span>`).join('');
     return `
       <tr>
-        <td><strong>${p.name}</strong></td>
-        <td>${p.shopkeeper_code || '—'}</td>
-        <td>${p.category || '—'}</td>
-        <td><div class="variant-tags">${sizeTags}${colorTags || '<span style="color:var(--muted);background:none;padding:0">No variant-level stock set</span>'}</div></td>
-        <td><input class="stock-num-input" type="number" min="0" value="${p.stock}" onchange="updateStock('${p.id}', this.value)"></td>
-        <td>
+        <td data-label="Product"><strong>${p.name}</strong></td>
+        <td data-label="Shopkeeper">${p.shopkeeper_code || '—'}</td>
+        <td data-label="Category">${p.category || '—'}</td>
+        <td data-label="Sizes/Colors" class="td-plain"><div class="variant-tags">${sizeTags}${colorTags || '<span style="color:var(--muted);background:none;padding:0">No variant-level stock set</span>'}</div></td>
+        <td data-label="Overall Stock"><input class="stock-num-input" type="number" min="0" value="${p.stock}" onchange="updateStock('${p.id}', this.value)"></td>
+        <td class="td-actions" data-label="Mark Sold">
           <button class="btn btn-outline btn-sm" onclick="markSold('${p.id}', 1)">−1 (Sold)</button>
         </td>
       </tr>

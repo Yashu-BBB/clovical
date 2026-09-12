@@ -16,6 +16,31 @@
     .section-head { font-size:1.2rem; font-weight:800; margin:28px 0 16px; padding-bottom:8px; border-bottom:2px solid var(--border); }
     .sk-table-wrap { overflow-x:auto; }
     @media (max-width:600px) { .charts-grid, .charts-grid-3 { grid-template-columns:1fr; } }
+
+    /* .stat-grid/.stat-card come from admin.css and go to a fixed 2-column
+       grid at <=900px. A grid track's min width defaults to the width of
+       its content, so a long unbroken value like "₹1,23,456" in .stat-value
+       (900 weight, 1.7rem) can force that column — and the whole page —
+       wider than the viewport instead of wrapping. min-width:0 lets the
+       track shrink to the column size, and overflow-wrap lets the number
+       itself break onto a second line if it still doesn't fit. */
+    .stat-card { min-width: 0; }
+    .stat-value { overflow-wrap: anywhere; word-break: break-word; }
+
+    /* Period Comparison cards — replaces the old inline
+       style="display:grid;grid-template-columns:repeat(3,1fr)" so a
+       mobile override can target it. */
+    .period-cards-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-bottom:20px; }
+
+    @media (max-width: 640px) {
+      /* Three equal columns of Today/This Week/This Month get too
+         narrow to read comfortably on a phone — stack them instead. */
+      .period-cards-grid { grid-template-columns: 1fr; }
+      /* Refresh button: keep a full tap target once the title + button
+         wrap onto their own lines on narrow screens */
+      .admin-topbar { flex-wrap: wrap; row-gap: 10px; height: auto; padding: 12px; }
+      .admin-topbar .btn-sm { min-height: 40px; }
+    }
   </style>
 </head>
 <body>
@@ -45,7 +70,7 @@
 
         <!-- Time Based -->
         <div class="section-head">📅 Period Comparison</div>
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:20px" id="period-cards"></div>
+        <div class="period-cards-grid" id="period-cards"></div>
 
         <!-- Charts Row 1 -->
         <div class="section-head">📈 Revenue & Orders</div>
@@ -92,8 +117,8 @@
         <!-- Shopkeeper Analytics -->
         <div class="section-head">🏪 Shopkeeper Analytics</div>
         <div class="stat-grid" id="sk-summary-stats" style="margin-bottom:16px"></div>
-        <div class="sk-table-wrap">
-          <table>
+        <div class="table-wrap table-card-wrap sk-table-wrap">
+          <table class="table-card">
             <thead><tr><th>Code</th><th>Shop</th><th>Sold</th><th>Revenue</th><th>Profit</th><th>Amount Owed</th></tr></thead>
             <tbody id="sk-table-body"></tbody>
           </table>
@@ -261,12 +286,12 @@ async function loadAnalytics() {
     `;
     document.getElementById("sk-table-body").innerHTML = (d.shopkeepers||[]).map(s => `
       <tr>
-        <td><strong style="color:var(--primary)">${s.code}</strong></td>
-        <td>${s.shop_name}</td>
-        <td>${s.total_sold}</td>
-        <td>${formatPrice(s.revenue)}</td>
-        <td style="color:var(--success);font-weight:700">+${formatPrice(s.profit)}</td>
-        <td style="color:var(--danger);font-weight:700">${formatPrice(s.amount_owed)}</td>
+        <td data-label="Code"><strong style="color:var(--primary)">${s.code}</strong></td>
+        <td data-label="Shop">${s.shop_name}</td>
+        <td data-label="Sold">${s.total_sold}</td>
+        <td data-label="Revenue">${formatPrice(s.revenue)}</td>
+        <td data-label="Profit" style="color:var(--success);font-weight:700">+${formatPrice(s.profit)}</td>
+        <td data-label="Amount Owed" style="color:var(--danger);font-weight:700">${formatPrice(s.amount_owed)}</td>
       </tr>
     `).join("");
 

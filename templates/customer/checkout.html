@@ -366,6 +366,12 @@
       margin-bottom: 24px;
       padding-bottom: 18px;
       border-bottom: 1px dashed var(--border);
+      flex-wrap: wrap;
+    }
+
+    .customer-status-label {
+      min-width: 0;
+      overflow-wrap: anywhere;
     }
 
     /* ─── PAYMENT METHOD ──────────────────────────────────── */
@@ -611,7 +617,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
 
         <!-- Signed-in status + logout -->
         <div class="customer-status-bar" id="customer-status-bar" style="display:none">
-          <span id="customer-status-label"></span>
+          <span id="customer-status-label" class="customer-status-label"></span>
           <button type="button" class="link-btn" onclick="logoutCustomer()">Log out</button>
         </div>
 

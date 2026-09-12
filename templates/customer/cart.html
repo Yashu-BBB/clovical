@@ -253,6 +253,11 @@
       .page-head { padding: 32px 0 0; }
       .cart-item { gap: 14px; }
       .cart-item-img { width: 80px; height: 102px; }
+      /* qty-ctrl (fixed ~108px) + remove-btn no longer fit on one line
+         next to the image + price once the info column shrinks below
+         ~360px viewport width — wrap the remove button onto its own
+         line instead of forcing the whole row wider than the screen. */
+      .qty-row { flex-wrap: wrap; row-gap: 10px; }
     }
   </style>
 <!-- Google Tag Manager -->

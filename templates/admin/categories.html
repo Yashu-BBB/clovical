@@ -12,6 +12,10 @@
     .gender-filter button { padding:8px 20px; border-radius:999px; border:2px solid var(--border); background:#fff; font-weight:600; cursor:pointer; transition:all .2s; }
     .gender-filter button.active { background:var(--primary); color:#fff; border-color:var(--primary); }
     .cat-icon-preview { font-size:1.5rem; margin-right:8px; }
+
+    @media (max-width: 760px) {
+      .table-card td.td-actions .btn { min-width: 0; flex: 1 1 100%; }
+    }
   </style>
 </head>
 <body>
@@ -35,8 +39,8 @@
         <button id="filter-Boys" onclick="filterGender('Boys', this)">👕 Boys</button>
       </div>
 
-      <div class="table-wrap">
-        <table>
+      <div class="table-wrap table-card-wrap">
+        <table class="table-card">
           <thead>
             <tr><th>Icon</th><th>Name</th><th>Gender</th><th>Sort Order</th><th>Actions</th></tr>
           </thead>
@@ -120,11 +124,11 @@ function renderTable() {
   }
   body.innerHTML = filtered.map(c => `
     <tr>
-      <td style="font-size:1.5rem">${c.icon}</td>
-      <td><strong>${c.name}</strong></td>
-      <td><span class="badge badge-${c.gender === 'Girls' ? 'primary' : 'warning'}">${c.gender}</span></td>
-      <td>${c.sort_order}</td>
-      <td>
+      <td class="td-plain" data-label="Icon" style="font-size:1.5rem">${c.icon}</td>
+      <td data-label="Name"><strong>${c.name}</strong></td>
+      <td data-label="Gender"><span class="badge badge-${c.gender === 'Girls' ? 'primary' : 'warning'}">${c.gender}</span></td>
+      <td data-label="Sort Order">${c.sort_order}</td>
+      <td class="td-actions" data-label="Actions">
         <button class="btn btn-outline btn-sm" onclick='openEdit(${JSON.stringify(c)})'>Edit</button>
         <button class="btn btn-danger btn-sm" onclick="deleteCat(${c.id},'${c.name}')">Delete</button>
       </td>

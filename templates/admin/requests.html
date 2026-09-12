@@ -85,6 +85,15 @@
       background: #FAFAFA !important; color: var(--text); cursor: default;
     }
     .locked-note { font-size: 0.72rem; color: var(--muted); font-weight: 400; }
+
+    @media (max-width: 760px) {
+      .filter-bar select { width: 100%; padding: 12px 14px; font-size: 16px; min-height: 44px; }
+      /* Photo cell reads better full-width without a redundant label */
+      .table-card td[data-label="Photo"] { justify-content: flex-start; }
+      /* Save / Accept — two long labels side by side get squeezed onto
+         several cramped lines at 360-430px; stack them instead. */
+      .req-modal-actions { flex-direction: column; }
+    }
   </style>
 </head>
 <body>
@@ -110,8 +119,8 @@
         </select>
       </div>
 
-      <div class="table-wrap">
-        <table>
+      <div class="table-wrap table-card-wrap">
+        <table class="table-card">
           <thead>
             <tr>
               <th>Photo</th><th>Product</th><th>Shopkeeper</th><th>Their Price</th>
@@ -231,7 +240,7 @@
     <!-- Shopkeeper's original photos (reference only, never edited here) -->
     <div class="form-group">
       <label class="form-label">Shopkeeper's Submitted Photos <span class="locked-note">— reference only, deleted automatically once accepted</span></label>
-      <div style="display:flex;gap:14px;align-items:flex-start">
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start">
         <div>
           <div class="locked-note" style="margin-bottom:4px">Front</div>
           <img id="sk-photo-front" class="img-slot" style="width:90px;height:110px;cursor:default" src="">
@@ -258,7 +267,7 @@
       <input type="file" id="img-file-picker" accept="image/jpeg,image/png,image/webp" multiple style="display:none" onchange="onImageFilePicked(this)">
     </div>
 
-    <div style="display:flex;gap:12px;margin-top:8px">
+    <div class="req-modal-actions" style="display:flex;gap:12px;margin-top:8px">
       <button class="btn btn-outline" style="flex:1" id="save-btn" onclick="saveReview()">Save (Price / MRP / Images)</button>
       <button class="btn btn-primary" style="flex:1" id="accept-btn" onclick="acceptRequest()">Accept → Make Live</button>
     </div>
@@ -286,15 +295,15 @@ async function loadRequests() {
       const thumb = r.shopkeeper_image_front_thumb || r.shopkeeper_image_front || (r.admin_images && r.admin_images[0]);
       return `
       <tr>
-        <td>${thumb ? `<img class="req-thumb" src="${escapeHtml(thumb)}">` : '<div class="req-thumb-placeholder">—</div>'}</td>
-        <td><strong>${escapeHtml(r.name)}</strong><br><span style="font-size:0.78rem;color:var(--muted)">${escapeHtml(r.category || '—')} · ${escapeHtml(r.gender || '—')}</span></td>
-        <td>#${String(r.shopkeeper_id).padStart(3,'0')}</td>
-        <td>₹${Number(r.shopkeeper_price).toLocaleString('en-IN')}</td>
-        <td>${r.our_price != null ? '₹' + Number(r.our_price).toLocaleString('en-IN') : '<span style="color:var(--muted)">Not set</span>'}</td>
-        <td>${r.mrp != null ? '₹' + Number(r.mrp).toLocaleString('en-IN') : '—'}</td>
-        <td>${(r.admin_images && r.admin_images.length) ? `<span class="badge badge-success">${r.admin_images.length} attached</span>` : '<span class="badge badge-muted">Pending</span>'}</td>
-        <td><span class="badge badge-${r.status === 'accepted' ? 'success' : r.status === 'rejected' ? 'danger' : 'gold'}">${escapeHtml(r.status)}</span></td>
-        <td>${r.status === 'pending' ? `<button class="btn btn-outline btn-sm" onclick='openReview(${escapeHtml(JSON.stringify(r))})'>Review</button>` : '—'}</td>
+        <td class="td-plain" data-label="Photo">${thumb ? `<img class="req-thumb" src="${escapeHtml(thumb)}">` : '<div class="req-thumb-placeholder">—</div>'}</td>
+        <td data-label="Product"><strong>${escapeHtml(r.name)}</strong><br><span style="font-size:0.78rem;color:var(--muted)">${escapeHtml(r.category || '—')} · ${escapeHtml(r.gender || '—')}</span></td>
+        <td data-label="Shopkeeper">#${String(r.shopkeeper_id).padStart(3,'0')}</td>
+        <td data-label="Their Price">₹${Number(r.shopkeeper_price).toLocaleString('en-IN')}</td>
+        <td data-label="Our Price">${r.our_price != null ? '₹' + Number(r.our_price).toLocaleString('en-IN') : '<span style="color:var(--muted)">Not set</span>'}</td>
+        <td data-label="MRP">${r.mrp != null ? '₹' + Number(r.mrp).toLocaleString('en-IN') : '—'}</td>
+        <td data-label="Images">${(r.admin_images && r.admin_images.length) ? `<span class="badge badge-success">${r.admin_images.length} attached</span>` : '<span class="badge badge-muted">Pending</span>'}</td>
+        <td data-label="Status"><span class="badge badge-${r.status === 'accepted' ? 'success' : r.status === 'rejected' ? 'danger' : 'gold'}">${escapeHtml(r.status)}</span></td>
+        <td class="td-actions" data-label="Actions">${r.status === 'pending' ? `<button class="btn btn-outline btn-sm" onclick='openReview(${escapeHtml(JSON.stringify(r))})'>Review</button>` : '—'}</td>
       </tr>
     `;
     }).join('');

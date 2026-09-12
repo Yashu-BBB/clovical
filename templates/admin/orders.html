@@ -29,6 +29,20 @@
     }
     .btn-outline .btn-spinner { border-color: rgba(10,10,10,0.25); border-top-color: #0A0A0A; }
     @keyframes btn-spin { to { transform: rotate(360deg); } }
+
+    @media (max-width: 760px) {
+      .filter-bar select { width: 100%; padding: 12px 14px; font-size: 16px; min-height: 44px; }
+      /* Order cell (thumb + id) reads better full-width without a
+         redundant "Order" label crowding it */
+      .table-card td[data-label="Order"] { justify-content: flex-start; }
+      .table-card .order-thumb,
+      .table-card .order-thumb-placeholder { width: 46px; height: 46px; }
+      /* ship-actions is its own internal column of buttons — give it room
+         to breathe full-width instead of squeezed against a label */
+      .table-card td.td-actions { justify-content: flex-start; }
+      .table-card td.td-actions .ship-actions { width: 100%; }
+      .table-card td.td-actions .btn { min-width: 0; flex: 1 1 100%; }
+    }
   </style>
 </head>
 <body>
@@ -57,8 +71,8 @@
         </select>
       </div>
 
-      <div class="table-wrap">
-        <table>
+      <div class="table-wrap table-card-wrap">
+        <table class="table-card">
           <thead>
             <tr>
               <th>Order</th><th>Customer</th><th>Product</th><th>Shop</th>
@@ -186,7 +200,7 @@ async function loadOrders() {
 
     body.innerHTML = orders.map(o => `
       <tr>
-        <td style="font-family:monospace;font-size:0.75rem">
+        <td data-label="Order" style="font-family:monospace;font-size:0.75rem">
           <div class="order-code-cell">
             ${o.product_image
               ? `<img class="order-thumb" src="${escapeHtml(o.product_image)}" alt="${escapeHtml(o.product_name || '')}">`
@@ -194,23 +208,23 @@ async function loadOrders() {
             <span>${o.id.slice(0,8)}...<br><span style="color:var(--muted)">${escapeHtml(o.shopkeeper_code||'')}</span></span>
           </div>
         </td>
-        <td>
+        <td data-label="Customer">
           <strong>${escapeHtml(o.customer_name)}</strong><br>
           <a href="https://wa.me/91${encodeURIComponent(o.customer_phone||'')}" target="_blank" style="color:var(--primary);font-size:0.8rem">${escapeHtml(o.customer_phone)}</a><br>
           <span style="color:var(--muted);font-size:0.75rem">${escapeHtml(o.customer_city)} — <span class="pincode-tag">${escapeHtml(o.customer_pincode || '—')}</span></span>
         </td>
-        <td>
+        <td data-label="Product">
           <strong>${escapeHtml(o.product_name)}</strong><br>
           <span style="color:var(--muted);font-size:0.8rem">Size: ${escapeHtml(o.size)} · ${escapeHtml(o.color)}</span>
           ${o.tracking_id ? `<br><span style="font-size:0.75rem">📦 ${escapeHtml(o.tracking_id)}</span>` : ''}
           ${o.courier_name ? `<br><span style="font-size:0.7rem;color:var(--muted)">${escapeHtml(o.courier_name)}</span>` : ''}
         </td>
-        <td style="font-size:0.8rem">
+        <td data-label="Shop" style="font-size:0.8rem">
           ${o.shop_name ? `${escapeHtml(o.shop_name)}${o.shop_city ? `, ${escapeHtml(o.shop_city)}` : ''}` : `<span style="color:var(--muted)">—</span>`}
         </td>
-        <td><strong>${formatPrice(o.our_price)}</strong></td>
-        <td style="color:var(--success);font-weight:700">+${formatPrice(o.profit)}</td>
-        <td style="font-size:0.75rem">
+        <td data-label="Amount"><strong>${formatPrice(o.our_price)}</strong></td>
+        <td data-label="Profit" style="color:var(--success);font-weight:700">+${formatPrice(o.profit)}</td>
+        <td data-label="Delivery" style="font-size:0.75rem">
           ${(() => {
             const itemCount = groupCounts[o.checkout_group_id || o.id] || 1;
             if (o.delivery_fee && o.delivery_fee > 0) {
@@ -223,23 +237,23 @@ async function loadOrders() {
             return itemCount > 1 ? `<span style="color:var(--muted)">— (part of ${itemCount}-item order)</span>` : `<span style="color:var(--muted)">—</span>`;
           })()}
         </td>
-        <td>
+        <td data-label="Payment">
           <span class="badge badge-${o.payment_type === 'upi' ? 'primary' : 'warning'}">${(o.payment_type||'').toUpperCase()}</span><br>
           <span style="font-size:0.75rem;color:var(--muted)">${o.payment_status||''}</span>
         </td>
-        <td><span class="badge badge-${STATUS_COLORS[o.status]||'muted'}">${o.status}</span>
+        <td data-label="Status"><span class="badge badge-${STATUS_COLORS[o.status]||'muted'}">${o.status}</span>
           ${o.refund_status && o.refund_status !== 'none' ? `<br><span class="badge badge-warning" style="margin-top:4px">${o.refund_status}</span>` : ''}
         </td>
-        <td style="font-size:0.75rem">
+        <td data-label="Shipping" style="font-size:0.75rem">
           ${o.nimbuspost_awb
             ? `<span class="badge badge-success">${o.shipping_status || 'created'}</span>`
             : (o.status === 'confirmed' ? '<span class="badge badge-warning">Not shipped</span>' : '<span style="color:var(--muted)">—</span>')}
         </td>
-        <td style="font-size:0.75rem">
+        <td data-label="Packing" style="font-size:0.75rem">
           <span class="badge badge-${PACKING_COLORS[o.packing_status] || 'muted'}" title="Set by the shopkeeper — read-only here">${(o.packing_status || 'unpacked').replace(/^./, c => c.toUpperCase())}</span>
         </td>
-        <td style="font-size:0.8rem;color:var(--muted)">${new Date(o.created_at).toLocaleDateString('en-IN')}</td>
-        <td>
+        <td data-label="Date" style="font-size:0.8rem;color:var(--muted)">${new Date(o.created_at).toLocaleDateString('en-IN')}</td>
+        <td class="td-actions" data-label="Actions">
           <div class="ship-actions">
             <button class="btn btn-outline btn-sm" onclick='openUpdate(${escapeHtml(JSON.stringify(o))})'>Update</button>
             <button class="btn btn-outline btn-sm" onclick="downloadOrderPDF('${o.id}', this)">📄 PDF</button>

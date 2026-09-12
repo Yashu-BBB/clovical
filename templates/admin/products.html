@@ -123,6 +123,15 @@
       padding: 4px 6px; font-size: 0.82rem; font-family: inherit;
     }
     .variant-stock-empty { font-size: 0.8rem; color: var(--muted); }
+
+    @media (max-width: 760px) {
+      /* Product thumb reads better full-width without a redundant
+         "Image" label crowding it */
+      .table-card td[data-label="Image"] { justify-content: flex-start; }
+      .table-card .product-thumb { width: 56px; height: 70px; }
+      /* Edit/Delete: full-width stacked instead of squeezed side by side */
+      .table-card td.td-actions .btn { min-width: 0; flex: 1 1 100%; }
+    }
   </style>
 </head>
 <body>
@@ -140,8 +149,8 @@
     </div>
 
     <div class="admin-content">
-      <div class="table-wrap">
-        <table>
+      <div class="table-wrap table-card-wrap">
+        <table class="table-card">
           <thead>
             <tr>
               <th>Image</th><th>Name</th><th>Gender</th><th>Category</th><th>MRP</th><th>Our Price</th><th>Discount</th><th>SK Price</th>
@@ -873,18 +882,18 @@ async function loadProducts() {
     }
     body.innerHTML = products.map(p => `
       <tr>
-        <td><img src="${p.image || '/static/images/placeholder.svg'}" class="product-thumb" alt="${p.name}"></td>
-        <td><strong>${p.name}</strong></td>
-        <td><span class="badge badge-${p.gender === 'Girls' ? 'primary' : 'warning'}">${p.gender || '—'}</span></td>
-        <td>${p.category || '—'}</td>
-        <td style="color:var(--muted);text-decoration:line-through">${p.mrp ? formatPrice(p.mrp) : '—'}</td>
-        <td><strong>${formatPrice(p.our_price)}</strong></td>
-        <td>${p.mrp && p.mrp > p.our_price ? `<span class="badge badge-danger">-${Math.round((1 - p.our_price/p.mrp)*100)}%</span>` : '—'}</td>
-        <td style="color:var(--muted)">${formatPrice(p.shopkeeper_price)}</td>
-        <td style="color:var(--success);font-weight:700">+${formatPrice(p.our_price - p.shopkeeper_price)}</td>
-        <td><span class="badge badge-${p.stock > 2 ? 'success' : p.stock > 0 ? 'warning' : 'danger'}">${p.stock}</span></td>
-        <td style="font-weight:700;color:var(--primary)">${p.shopkeeper_code || ''}</td>
-        <td>
+        <td class="td-plain" data-label="Image"><img src="${p.image || '/static/images/placeholder.svg'}" class="product-thumb" alt="${p.name}"></td>
+        <td data-label="Name"><strong>${p.name}</strong></td>
+        <td data-label="Gender"><span class="badge badge-${p.gender === 'Girls' ? 'primary' : 'warning'}">${p.gender || '—'}</span></td>
+        <td data-label="Category">${p.category || '—'}</td>
+        <td data-label="MRP" style="color:var(--muted);text-decoration:line-through">${p.mrp ? formatPrice(p.mrp) : '—'}</td>
+        <td data-label="Our Price"><strong>${formatPrice(p.our_price)}</strong></td>
+        <td data-label="Discount">${p.mrp && p.mrp > p.our_price ? `<span class="badge badge-danger">-${Math.round((1 - p.our_price/p.mrp)*100)}%</span>` : '—'}</td>
+        <td data-label="SK Price" style="color:var(--muted)">${formatPrice(p.shopkeeper_price)}</td>
+        <td data-label="Profit" style="color:var(--success);font-weight:700">+${formatPrice(p.our_price - p.shopkeeper_price)}</td>
+        <td data-label="Stock"><span class="badge badge-${p.stock > 2 ? 'success' : p.stock > 0 ? 'warning' : 'danger'}">${p.stock}</span></td>
+        <td data-label="Code" style="font-weight:700;color:var(--primary)">${p.shopkeeper_code || ''}</td>
+        <td class="td-actions" data-label="Actions">
           <button class="btn btn-outline btn-sm" onclick='openEdit(${JSON.stringify(p)})'>Edit</button>
           <button class="btn btn-danger btn-sm" onclick="deleteProduct('${p.id}','${p.name}')">Delete</button>
         </td>
