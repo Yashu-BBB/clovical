@@ -67,15 +67,19 @@ async def sitemap_xml():
     try:
         result = await run_query(
             supabase_admin.table("products")
-            .select("id,created_at,stock")
+            .select("id,created_at,updated_at,stock")
             .gt("stock", 0)
         )
         for row in (result.data or []):
             pid = row.get("id")
             if not pid:
                 continue
-            created = row.get("created_at")
-            lastmod = created[:10] if created else today
+            # updated_at reflects the real last-edit time (maintained by a
+            # DB trigger — see schema_products_updated_at_migration.sql).
+            # Fall back to created_at for any row from before that column
+            # existed, and to today only as a last resort.
+            timestamp = row.get("updated_at") or row.get("created_at")
+            lastmod = timestamp[:10] if timestamp else today
             product_urls.append({
                 "loc": f"{SITE_URL}/product/{pid}",
                 "changefreq": "weekly",

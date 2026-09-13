@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -189,6 +189,33 @@ async def track_and_protect(request: Request, call_next):
         logger.info(log_line)
 
     return response
+
+# ─── Middleware: non-www → www canonical redirect ──────────────────────────
+# SEO consolidation: clovical.in and www.clovical.in currently serve
+# identical content independently, splitting ranking signals between two
+# hosts. SITE_URL (routers/public.py) and every canonical/OG tag already
+# assume https://www.clovical.in is canonical, so bounce the bare domain
+# there permanently. Deliberately scoped to exactly the apex domain — it
+# never touches the Railway internal hostname or localhost, so local dev,
+# health checks, and existing www.clovical.in traffic are unaffected; a
+# visitor on the non-www URL gets one seamless extra hop and lands on the
+# same page (path + query string preserved) on www.
+#
+# Registered last (Starlette runs the most-recently-added `@app.middleware`
+# outermost/first), so a non-www hit is redirected immediately — before it
+# reaches visitor-tracking/rate-limiting above or any router below.
+NON_WWW_HOST = "clovical.in"
+WWW_ORIGIN = "https://www.clovical.in"
+
+@app.middleware("http")
+async def redirect_non_www_to_www(request: Request, call_next):
+    host = (request.headers.get("host") or "").split(":")[0].lower()
+    if host == NON_WWW_HOST:
+        target = f"{WWW_ORIGIN}{request.url.path}"
+        if request.url.query:
+            target += f"?{request.url.query}"
+        return RedirectResponse(url=target, status_code=301)
+    return await call_next(request)
 
 # ─── Static Files & Templates ──────────────────────────────────────────────
 app.mount("/static", StaticFiles(directory="static"), name="static")

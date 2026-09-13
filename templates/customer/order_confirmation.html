@@ -60,6 +60,58 @@
     }
     .confirm-actions { display: flex; flex-direction: column; gap: 10px; }
     .confirm-summary { text-align: left; margin: 28px 0; }
+
+    /* ─── ORDER SUMMARY (success state) ───────────────────────
+       Mirrors checkout.html's .summary-card / .order-item* pattern so
+       the post-payment recap reads the same as the pre-payment one.
+       Unlike checkout's version (a scrollable list of N cart items),
+       this always renders exactly one order — so no per-row
+       border-bottom/list rhythm is needed, just the single row. */
+    .summary-card {
+      background: #FFFFFF;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+
+    .order-item {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .order-item-img {
+      width: 56px;
+      height: 70px;
+      object-fit: cover;
+      border-radius: var(--radius-sm);
+      background: #F5F5F5;
+      flex-shrink: 0;
+    }
+
+    .order-item-info { flex: 1; min-width: 0; }
+
+    .order-item-name {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--off-white);
+      margin-bottom: 3px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .order-item-meta {
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+
+    .order-item-price {
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: #0A0A0A;
+      white-space: nowrap;
+    }
   </style>
 <!-- Google Tag Manager -->
 <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
