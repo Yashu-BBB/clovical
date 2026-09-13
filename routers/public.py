@@ -432,6 +432,12 @@ async def admin_analytics(request: Request):
         return RedirectResponse("/admin/login")
     return render("admin/analytics.html", request)
 
+@router.get("/admin/visitors", response_class=HTMLResponse)
+async def admin_visitors(request: Request):
+    if not get_admin_from_request(request):
+        return RedirectResponse("/admin/login")
+    return render("admin/visitors.html", request)
+
 
 @router.get("/admin/requests", response_class=HTMLResponse)
 async def admin_requests_page(request: Request):

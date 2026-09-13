@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" type="image/png" sizes="512x512" href="/static/images/android-chrome-512x512.png">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Visitors — clovical Admin</title>
+  <link rel="stylesheet" href="/static/css/shared.css?v={{ ASSET_V }}">
+  <link rel="stylesheet" href="/static/css/admin.css">
+  <style>
+    .live-dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#22C55E; animation:live-pulse 1.5s ease-in-out infinite; }
+    @keyframes live-pulse { 0%,100% { opacity:1; box-shadow:0 0 0 0 rgba(34,197,94,0.5); } 50% { opacity:0.6; box-shadow:0 0 0 4px rgba(34,197,94,0); } }
+  </style>
+</head>
+<body>
+<div class="admin-layout">
+  {% set active = 'visitors' %}
+  {% include 'admin/_sidebar.html' %}
+
+  <div class="admin-main">
+    <div class="admin-topbar">
+      <div style="display:flex;align-items:center;gap:12px">
+        <button class="sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
+        <span class="admin-topbar-title">Visitors</span>
+      </div>
+    </div>
+
+    <div class="admin-content">
+      <div class="stat-grid" id="visitor-stat-cards">
+        <div class="stat-card"><div class="stat-label">Total Visitors</div><div class="stat-value skeleton" style="height:36px;width:80px"></div></div>
+        <div class="stat-card"><div class="stat-label">This Month</div><div class="stat-value skeleton" style="height:36px;width:70px"></div></div>
+        <div class="stat-card"><div class="stat-label">This Week</div><div class="stat-value skeleton" style="height:36px;width:70px"></div></div>
+        <div class="stat-card green"><div class="stat-label">Today</div><div class="stat-value skeleton" style="height:36px;width:60px"></div></div>
+      </div>
+
+      <!-- Live Visitors Card -->
+      <div class="stat-card" style="margin-top:4px">
+        <div class="stat-label" style="display:flex;align-items:center;gap:6px">
+          <span class="live-dot"></span> LIVE NOW
+        </div>
+        <div class="stat-value" id="active-visitors-count">—</div>
+        <div style="color:var(--muted);font-size:0.8rem">active visitors, last 5 minutes</div>
+        <div style="color:var(--muted);font-size:0.75rem;margin-top:4px" id="active-visitors-updated"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+<script src="/static/js/shared.js?v={{ ASSET_V }}"></script>
+<script>
+async function loadVisitorStats() {
+  try {
+    const d = await apiFetch("/api/analytics/visitors");
+    document.getElementById("visitor-stat-cards").innerHTML = `
+      <div class="stat-card"><div class="stat-label">Total Visitors</div><div class="stat-value">${d.total}</div></div>
+      <div class="stat-card"><div class="stat-label">This Month</div><div class="stat-value">${d.this_month}</div></div>
+      <div class="stat-card"><div class="stat-label">This Week</div><div class="stat-value">${d.this_week}</div></div>
+      <div class="stat-card green"><div class="stat-label">Today</div><div class="stat-value">${d.today}</div></div>
+    `;
+  } catch (e) {
+    showToast(e.message || "Failed to load visitor stats", "error");
+  }
+}
+
+async function loadActiveVisitors() {
+  try {
+    const data = await apiFetch("/api/admin/active-visitors");
+    document.getElementById("active-visitors-count").textContent = data.error ? "Unavailable" : data.count;
+    document.getElementById("active-visitors-updated").textContent = "Updated just now";
+  } catch (e) {
+    document.getElementById("active-visitors-count").textContent = "—";
+    document.getElementById("active-visitors-updated").textContent = "Unavailable";
+  }
+}
+
+async function logout() {
+  await apiFetch("/api/auth/logout", { method: "POST" });
+  window.location = "/admin/login";
+}
+
+loadVisitorStats();
+loadActiveVisitors();
+setInterval(loadActiveVisitors, 30000);
+</script>
+</body>
+</html>

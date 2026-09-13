@@ -53,11 +53,6 @@ async def analytics_overview(admin=Depends(require_admin)):
         total_cost = sum(o["shopkeeper_price"] for o in active)
         total_profit = sum(o["profit"] for o in active)
 
-        # Visitors
-        visitors_res = await run_query(supabase_admin.table("visitors").select("ip_hash"))
-        visitors = visitors_res.data or []
-        total_visitors = len(visitors)
-
         # Products
         total_products_res = await run_query(supabase_admin.table("products").select("id", count="exact"))
         total_products = total_products_res.count or 0
@@ -176,7 +171,6 @@ async def analytics_overview(admin=Depends(require_admin)):
                 "profit": total_profit,
                 "orders": len(active),
                 "products": total_products,
-                "visitors": total_visitors,
                 "unique_buyers": unique_buyers,
                 "aov": aov,
                 "reviews_count": len(reviews),
@@ -207,3 +201,38 @@ async def analytics_overview(admin=Depends(require_admin)):
     except Exception as e:
         logger.error(f"Analytics overview failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch analytics")
+
+@router.get("/visitors")
+async def visitor_stats(admin=Depends(require_admin)):
+    """
+    Visitor counts for the dedicated Visitors admin page — total, this
+    month, this week, and today. Live (last-5-minutes) count is served
+    separately by GET /api/admin/active-visitors, which is Redis-backed
+    rather than a table count and already has its own endpoint.
+
+    Uses count="exact" (a real SQL COUNT) rather than fetching rows and
+    taking len(), since a plain .select() is capped at Supabase's default
+    page size and would silently undercount once visitor volume grows.
+    """
+    cache_key = "analytics:visitors"
+    try:
+        cached = await cache_get(cache_key)
+        if cached is not None:
+            return cached
+
+        total_res = await run_query(supabase_admin.table("visitors").select("id", count="exact"))
+        today_res = await run_query(supabase_admin.table("visitors").select("id", count="exact").gte("created_at", start_of_day()))
+        week_res = await run_query(supabase_admin.table("visitors").select("id", count="exact").gte("created_at", start_of_week()))
+        month_res = await run_query(supabase_admin.table("visitors").select("id", count="exact").gte("created_at", start_of_month()))
+
+        result = {
+            "total": total_res.count or 0,
+            "today": today_res.count or 0,
+            "this_week": week_res.count or 0,
+            "this_month": month_res.count or 0,
+        }
+        await cache_set(cache_key, result, ttl=120)
+        return result
+    except Exception as e:
+        logger.error(f"Visitor stats failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch visitor stats")

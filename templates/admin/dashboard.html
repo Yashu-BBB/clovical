@@ -16,8 +16,6 @@
     .toggle-switch input:checked + .toggle-slider:before { transform:translateX(20px); }
     /* Black toggle variant for Section Settings */
     .toggle-switch.black-toggle input:checked + .toggle-slider { background:#0A0A0A; }
-    .live-dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#22C55E; animation:live-pulse 1.5s ease-in-out infinite; }
-    @keyframes live-pulse { 0%,100% { opacity:1; box-shadow:0 0 0 0 rgba(34,197,94,0.5); } 50% { opacity:0.6; box-shadow:0 0 0 4px rgba(34,197,94,0); } }
 
     /* Low Stock / Refunds Pending side-by-side panels — replaces the old
        inline style="display:grid;grid-template-columns:1fr 1fr" so a
@@ -55,16 +53,6 @@
         <div class="stat-card green"><div class="stat-label">Orders Today</div><div class="stat-value skeleton" style="height:36px;width:60px"></div></div>
         <div class="stat-card amber"><div class="stat-label">Revenue Today</div><div class="stat-value skeleton" style="height:36px;width:100px"></div></div>
         <div class="stat-card green"><div class="stat-label">Profit Today</div><div class="stat-value skeleton" style="height:36px;width:80px"></div></div>
-      </div>
-
-      <!-- Live Visitors Card -->
-      <div class="stat-card" style="margin-top:16px">
-        <div class="stat-label" style="display:flex;align-items:center;gap:6px">
-          <span class="live-dot"></span> LIVE NOW
-        </div>
-        <div class="stat-value" id="active-visitors-count">—</div>
-        <div style="color:var(--muted);font-size:0.8rem">active visitors, last 5 minutes</div>
-        <div style="color:var(--muted);font-size:0.75rem;margin-top:4px" id="active-visitors-updated"></div>
       </div>
 
       <!-- Shipment Stat Cards -->
@@ -367,23 +355,10 @@ async function logout() {
   window.location = "/admin/login";
 }
 
-async function loadActiveVisitors() {
-  try {
-    const data = await apiFetch("/api/admin/active-visitors");
-    document.getElementById("active-visitors-count").textContent = data.error ? "Unavailable" : data.count;
-    document.getElementById("active-visitors-updated").textContent = "Updated just now";
-  } catch (e) {
-    document.getElementById("active-visitors-count").textContent = "—";
-    document.getElementById("active-visitors-updated").textContent = "Unavailable";
-  }
-}
-
 loadDashboard();
 loadAutoShipSetting();
 loadDeliveryFee();
 loadGirlsSectionSetting();
-loadActiveVisitors();
-setInterval(loadActiveVisitors, 30000);
 </script>
 </body>
 </html>
