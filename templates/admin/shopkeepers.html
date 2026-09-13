@@ -4,82 +4,46 @@
   <meta charset="UTF-8">
   <link rel="icon" type="image/png" sizes="512x512" href="/static/images/android-chrome-512x512.png">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>My Orders — Shopkeeper Panel</title>
+  <title>Shopkeepers — clovical Admin</title>
   <link rel="stylesheet" href="/static/css/shared.css?v={{ ASSET_V }}">
   <link rel="stylesheet" href="/static/css/admin.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <style>
-    .filter-bar { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:20px; }
-    .filter-bar select { padding:8px 12px; border:2px solid var(--border); border-radius:8px; font-size:0.9rem; }
-    .packing-status-select { padding:6px 10px; border:2px solid var(--border); border-radius:8px; font-size:0.8rem; background:#FAFAFA; }
-    .order-thumb { width:38px; height:38px; border-radius:6px; object-fit:cover; border:1px solid var(--border); flex-shrink:0; }
-    .order-thumb-placeholder { width:38px; height:38px; border-radius:6px; border:1px dashed var(--border); flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:0.9rem; color:var(--muted); background:#FAFAFA; }
-    .btn-spinner { display: inline-block; width: 11px; height: 11px; border: 2px solid rgba(255,255,255,0.35); border-top-color: #FFFFFF; border-radius: 50%; margin-right: 6px; vertical-align: -1px; animation: btn-spin 0.7s linear infinite; }
-    .btn-outline .btn-spinner { border-color: rgba(10,10,10,0.25); border-top-color: #0A0A0A; }
-    @keyframes btn-spin { to { transform: rotate(360deg); } }
+    .login-status-cell { display:flex; align-items:center; gap:6px; }
 
     @media (max-width: 760px) {
-      /* Filter dropdown: full-width and touch-sized instead of a small
-         inline control */
-      .filter-bar { gap: 10px; }
-      .filter-bar select {
-        width: 100%; padding: 12px 14px; font-size: 16px; min-height: 44px;
-      }
-      /* Product cell (thumb + name) reads better full-width, without a
-         redundant "Product" label crowding it */
-      .table-card td[data-label="Product"] { justify-content: flex-start; }
-      .table-card .order-thumb,
-      .table-card .order-thumb-placeholder { width: 46px; height: 46px; }
-      /* Action buttons: full-width stacked, comfortably tappable */
-      .table-card td.td-actions .btn,
-      .table-card td.td-actions .packing-status-select { min-width: 0; flex: 1 1 100%; }
-      /* The Actions cell's gap is set inline (6px) by the JS that renders
-         each row, which is too tight once the select + buttons stack
-         full-width on mobile — risks misclicks between them. Widen it
-         for touch without touching the JS/markup. */
-      .table-card td.td-actions { gap: 10px !important; }
-      /* .packing-status-select isn't a .form-control, so it misses the
-         site-wide 16px/44px mobile input fix above — below 16px, iOS
-         Safari auto-zooms on focus, and the stock control was shorter
-         than the buttons next to it. */
-      .table-card td.td-actions .packing-status-select {
-        min-height: 44px; font-size: 16px; padding: 10px 12px;
-      }
+      /* Shop name cell reads better full-width without a redundant
+         label crowding it, matching the pattern used on other admin
+         tables (products.html Image cell, categories.html Icon cell) */
+      .table-card td[data-label="Shop"] { justify-content: flex-start; }
+      /* Actions: full-width stacked, comfortably tappable — this page has
+         more actions per row (Edit / Set Login / Revoke / Delete) than
+         most, so give them room instead of squeezing side by side */
+      .table-card td.td-actions .btn { min-width: 0; flex: 1 1 100%; }
     }
   </style>
 </head>
 <body>
 <div class="admin-layout">
-  {% set active = 'orders' %}
-  {% include 'shopkeeper/_sidebar.html' %}
+  {% set active = 'shopkeepers' %}
+  {% include 'admin/_sidebar.html' %}
 
   <div class="admin-main">
     <div class="admin-topbar">
       <div style="display:flex;align-items:center;gap:12px">
         <button class="sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
-        <span class="admin-topbar-title">My Orders</span>
+        <span class="admin-topbar-title">Shopkeepers</span>
       </div>
+      <button class="btn btn-primary btn-sm" onclick="openModal()">+ Add Shopkeeper</button>
     </div>
 
     <div class="admin-content">
-      <div class="filter-bar">
-        <select id="filter-status" onchange="loadOrders()">
-          <option value="">All Statuses</option>
-          <option value="pending">Pending</option>
-          <option value="confirmed">Confirmed</option>
-          <option value="shipped">Shipped</option>
-          <option value="delivered">Delivered</option>
-          <option value="cancelled">Cancelled</option>
-        </select>
-      </div>
-
       <div class="table-wrap table-card-wrap">
         <table class="table-card">
           <thead>
-            <tr><th>Product</th><th>Size / Color</th><th>You Get</th><th>Payment</th><th>Status</th><th>Date</th><th>Actions</th></tr>
+            <tr><th>Code</th><th>Shop</th><th>Products</th><th>Sold</th><th>Panel Login</th><th>Actions</th></tr>
           </thead>
-          <tbody id="orders-body">
-            <tr><td colspan="7" style="text-align:center;padding:32px;color:var(--muted)">Loading...</td></tr>
+          <tbody id="sk-body">
+            <tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted)">Loading...</td></tr>
           </tbody>
         </table>
       </div>
@@ -87,297 +51,266 @@
   </div>
 </div>
 
-<!-- Order Detail Modal -->
-<div class="modal-overlay" id="detail-modal">
-  <div class="modal" style="max-width:460px">
+<!-- Add/Edit Shopkeeper Modal -->
+<div class="modal-overlay" id="sk-modal">
+  <div class="modal" style="max-width:560px">
     <div class="modal-header">
-      <h3 class="modal-title">Order Details</h3>
-      <button class="modal-close" onclick="closeDetailModal()">×</button>
+      <h3 class="modal-title" id="modal-title">Add Shopkeeper</h3>
+      <button class="modal-close" onclick="closeModal()">×</button>
     </div>
-    <div id="detail-body">Loading...</div>
+    <div id="modal-alert"></div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Shop Name *</label>
+        <input class="form-control" id="sk-shop-name" maxlength="200" placeholder="e.g. Meena Fashions">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Shopkeeper Name *</label>
+        <input class="form-control" id="sk-shopkeeper-name" maxlength="200" placeholder="e.g. Meena Kumari">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">WhatsApp / Contact Number *</label>
+      <input class="form-control" id="sk-contact" maxlength="15" placeholder="e.g. 9876543210">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Address <span style="color:var(--muted);font-weight:400;font-size:0.82rem">— required for courier pickup registration</span></label>
+      <input class="form-control" id="sk-address" maxlength="500" placeholder="Full street address">
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">City</label>
+        <input class="form-control" id="sk-city" maxlength="100" placeholder="e.g. Davanagere">
+      </div>
+      <div class="form-group">
+        <label class="form-label">State</label>
+        <input class="form-control" id="sk-state" maxlength="100" placeholder="e.g. Karnataka">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Pincode</label>
+      <input class="form-control" id="sk-pincode" maxlength="6" placeholder="6-digit pincode">
+    </div>
+
+    <div style="display:flex;gap:12px;margin-top:8px">
+      <button class="btn btn-primary btn-lg" style="flex:1" id="submit-btn" onclick="saveShopkeeper()">Save</button>
+      <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Set/Reset Panel Login Credentials Modal -->
+<div class="modal-overlay" id="creds-modal">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header">
+      <h3 class="modal-title" id="creds-modal-title">Set Panel Login</h3>
+      <button class="modal-close" onclick="closeCredsModal()">×</button>
+    </div>
+    <div id="creds-modal-alert"></div>
+    <div class="form-group">
+      <label class="form-label">Username *</label>
+      <input class="form-control" id="creds-username" maxlength="50" placeholder="e.g. meena_fashions">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Password *</label>
+      <input class="form-control" id="creds-password" type="text" maxlength="100" placeholder="At least 6 characters">
+      <div style="font-size:0.8rem;color:var(--muted);margin-top:4px">Shown in plain text so you can hand it to the shopkeeper directly.</div>
+    </div>
+    <div style="display:flex;gap:12px;margin-top:8px">
+      <button class="btn btn-primary btn-lg" style="flex:1" id="creds-submit-btn" onclick="saveCredentials()">Save Login</button>
+      <button class="btn btn-outline" onclick="closeCredsModal()">Cancel</button>
+    </div>
   </div>
 </div>
 
 <div id="toast-container"></div>
 <script src="/static/js/shared.js?v={{ ASSET_V }}"></script>
 <script>
-async function loadOrders() {
-  const status = document.getElementById('filter-status').value;
-  try {
-    const orders = await apiFetch(`/api/orders/shopkeeper/mine${status ? '?status=' + status : ''}`);
-    const body = document.getElementById('orders-body');
-    if (!orders.length) {
-      body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--muted)">No orders yet.</td></tr>';
-      return;
-    }
-    body.innerHTML = orders.map(o => `
-      <tr>
-        <td data-label="Product" style="display:flex;align-items:center;gap:8px">
-          ${o.product_image ? `<img class="order-thumb" src="${escapeHtml(o.product_image)}">` : '<div class="order-thumb-placeholder">—</div>'}
-          <strong>${escapeHtml(o.product_name)}</strong>
-        </td>
-        <td data-label="Size / Color">${escapeHtml(o.size)} / ${escapeHtml(o.color)}</td>
-        <td data-label="You Get"><strong>₹${Number(o.shopkeeper_price).toLocaleString('en-IN')}</strong></td>
-        <td data-label="Payment">${(o.payment_type || '—').toUpperCase()} · <span class="badge badge-${o.payment_status === 'received' || o.payment_status === 'verified' ? 'success' : 'muted'}">${o.payment_status}</span></td>
-        <td data-label="Status"><span class="badge badge-gold">${o.status}</span></td>
-        <td data-label="Date">${new Date(o.created_at).toLocaleDateString('en-IN')}</td>
-        <td class="td-actions" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-          <select class="packing-status-select" data-order-id="${o.id}" data-prev="${o.packing_status || 'unpacked'}" onchange="updatePackingStatus('${o.id}', this)" title="Packing status — your own preparation tracker, separate from the order status above">
-            <option value="unpacked" ${(o.packing_status || 'unpacked') === 'unpacked' ? 'selected' : ''}>Unpacked</option>
-            <option value="packed" ${o.packing_status === 'packed' ? 'selected' : ''}>Packed</option>
-            <option value="shipped" ${o.packing_status === 'shipped' ? 'selected' : ''}>Shipped</option>
-          </select>
-          <button class="btn btn-outline btn-sm" onclick="viewOrderDetail('${o.id}')">View Details</button>
-          <button class="btn btn-outline btn-sm" onclick="downloadOrderPDF('${o.id}', this)">Generate PDF</button>
-          ${o.package_pdf_status === 'ready' ? `<button class="btn btn-outline btn-sm" onclick="downloadPackagePDF('${o.id}', this)">📦 Package PDF</button>` : ''}
-        </td>
-      </tr>
-    `).join('');
-  } catch(e) {
-    showToast(e.message || 'Failed to load orders', 'error');
-  }
-}
+let editingId = null;
+let credsSkId = null;
+let allShopkeepers = [];
 
-// Shopkeeper-only packing status (Unpacked/Packed/Shipped) — a physical
-// prep tracker, completely separate from the order's own status column.
-// Only this shopkeeper's own orders can be touched (enforced server-side
-// in PUT /api/orders/shopkeeper/{id}/packing-status).
-async function updatePackingStatus(orderId, selectEl) {
-  const newValue = selectEl.value;
-  const previousValue = selectEl.dataset.prev || 'unpacked';
-  selectEl.disabled = true;
+async function loadShopkeepers() {
+  const body = document.getElementById('sk-body');
   try {
-    await apiFetch(`/api/orders/shopkeeper/${orderId}/packing-status`, {
-      method: 'PUT',
-      body: JSON.stringify({ packing_status: newValue }),
-    });
-    selectEl.dataset.prev = newValue;
-    showToast('Packing status updated');
+    allShopkeepers = await apiFetch('/api/shopkeepers/admin/all');
+    renderTable();
   } catch (e) {
-    selectEl.value = previousValue; // revert on failure
-    showToast(e.message || 'Failed to update packing status', 'error');
-  } finally {
-    selectEl.disabled = false;
+    body.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted)">${e.message || 'Failed to load shopkeepers'}</td></tr>`;
   }
 }
 
-// Loads an image URL into a base64 data URL via an off-DOM <img> + canvas.
-// Resolves to null (never rejects) on any failure.
-function loadImageAsDataURL(url, timeoutMs = 8000) {
-  return new Promise((resolve) => {
-    if (!url) return resolve(null);
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    let settled = false;
-    const finish = (val) => { if (!settled) { settled = true; clearTimeout(timer); resolve(val); } };
-    const timer = setTimeout(() => finish(null), timeoutMs);
-    img.onload = () => {
-      try {
-        const canvas = document.createElement("canvas");
-        canvas.width = img.naturalWidth || 400;
-        canvas.height = img.naturalHeight || 400;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        finish(canvas.toDataURL("image/jpeg", 0.9));
-      } catch (e) { finish(null); }
-    };
-    img.onerror = () => finish(null);
-    img.src = url;
-  });
-}
-
-// Downloads the pre-built package PDF (product photo + NimbusPost's real
-// barcode label) generated automatically after shipment — different from
-// "Generate PDF" above, which renders a slip client-side on demand.
-async function downloadPackagePDF(orderId, btnEl) {
-  const originalHTML = btnEl.innerHTML;
-  btnEl.disabled = true;
-  btnEl.innerHTML = '<span class="btn-spinner"></span>Downloading...';
-  try {
-    const data = await apiFetch(`/api/orders/shopkeeper/${orderId}/package-pdf`);
-    const byteChars = atob(data.content_base64);
-    const bytes = new Uint8Array(byteChars.length);
-    for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
-    const blob = new Blob([bytes], { type: 'application/pdf' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = data.filename || `order_${orderId.slice(0, 8)}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  } catch (e) {
-    showToast(e.message || "Failed to download package PDF", "error");
-  } finally {
-    btnEl.disabled = false;
-    btnEl.innerHTML = originalHTML;
+function renderTable() {
+  const body = document.getElementById('sk-body');
+  if (!allShopkeepers.length) {
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted)">No shopkeepers yet</td></tr>';
+    return;
   }
-}
-
-async function downloadOrderPDF(orderId, btnEl) {
-  const originalHTML = btnEl.innerHTML;
-  btnEl.disabled = true;
-  btnEl.innerHTML = '<span class="btn-spinner"></span>Generating...';
-  try {
-    const data = await apiFetch(`/api/orders/shopkeeper/${orderId}/pdf-data`);
-    await buildOrderPDF(data);
-  } catch (e) {
-    showToast(e.message || "Failed to generate PDF", "error");
-  } finally {
-    btnEl.disabled = false;
-    btnEl.innerHTML = originalHTML;
-  }
-}
-
-// Same layout/format as the admin packing-slip PDF, minus customer contact
-// details and our_price/profit — a shopkeeper only ever sees what they're
-// paid (shopkeeper_price) and what they need to pack correctly.
-async function buildOrderPDF(data) {
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ unit: "mm", format: "a4" });
-  const pageW = 210, pageH = 297, margin = 16;
-  const BLACK = [10, 10, 10], GRAY = [107, 107, 107], LIGHT = [232, 232, 232];
-  let y = margin;
-
-  function checkPageBreak(needed) { if (y + needed > pageH - margin) { doc.addPage(); y = margin; } }
-  function divider() { doc.setDrawColor(...LIGHT); doc.setLineWidth(0.3); doc.line(margin, y, pageW - margin, y); y += 8; }
-  function sectionHeading(title) {
-    checkPageBreak(14);
-    doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(...BLACK);
-    doc.text(title.toUpperCase(), margin, y); y += 3;
-    doc.setDrawColor(...BLACK); doc.setLineWidth(0.6); doc.line(margin, y, margin + 26, y); y += 8;
-  }
-  const rupee = (n) => `Rs. ${Number(n || 0).toLocaleString("en-IN")}`;
-
-  // ── HEADER ──
-  doc.setFont("helvetica", "bold"); doc.setFontSize(20); doc.setTextColor(...BLACK);
-  doc.text("clovical", margin, y + 4);
-  const orderIdShort = "#" + (data.order.id || "").slice(0, 8).toUpperCase();
-  doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(...GRAY);
-  doc.text(orderIdShort, pageW - margin, y + 2, { align: "right" });
-  y += 11;
-  const orderDate = data.order.created_at
-    ? new Date(data.order.created_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "—";
-  doc.setFontSize(9); doc.setTextColor(...GRAY);
-  doc.text(`Order Date: ${orderDate}`, margin, y);
-  const status = (data.order.status || "—").toUpperCase();
-  doc.setFont("helvetica", "bold"); doc.setFontSize(8.5);
-  const badgeW = doc.getTextWidth(status) + 8;
-  doc.setFillColor(...BLACK);
-  doc.roundedRect(pageW - margin - badgeW, y - 4.5, badgeW, 6.5, 1.5, 1.5, "F");
-  doc.setTextColor(255, 255, 255);
-  doc.text(status, pageW - margin - badgeW / 2, y, { align: "center" });
-  y += 8; divider();
-
-  // ── PRODUCT ──
-  sectionHeading("Product Details");
-  const imgSize = 28;
-  let imgData = null;
-  try { imgData = await loadImageAsDataURL(data.product.image); } catch (e) {}
-  const textX = margin + (imgData ? imgSize + 8 : 0);
-  const textW = pageW - margin * 2 - (imgData ? imgSize + 8 : 0);
-  const imgTop = y;
-  if (imgData) {
-    try {
-      doc.setDrawColor(...LIGHT); doc.rect(margin, y, imgSize, imgSize);
-      doc.addImage(imgData, "JPEG", margin, y, imgSize, imgSize);
-    } catch (e) {}
-  }
-  let py = y;
-  doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.setTextColor(...BLACK);
-  const nameLines = doc.splitTextToSize(data.product.name || "—", textW);
-  doc.text(nameLines, textX, py + 4);
-  py += 4 + nameLines.length * 5 + 2;
-  doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(...GRAY);
-  doc.text(`Size: ${data.product.size || "—"}    Color: ${data.product.color || "—"}`, textX, py); py += 5;
-  doc.text(`Shopkeeper Code: ${data.product.shopkeeper_code || "—"}`, textX, py); py += 5;
-  doc.setFont("helvetica", "bold"); doc.setTextColor(...BLACK);
-  doc.text(`You Get: ${rupee(data.product.shopkeeper_price)}`, textX, py); py += 5;
-  y = Math.max(imgTop + imgSize, py) + 6; divider();
-
-  // ── PAYMENT ──
-  sectionHeading("Payment Details");
-  doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(...GRAY);
-  doc.text(`Payment Type: ${(data.payment.type || "—").toUpperCase()}`, margin, y); y += 6;
-  doc.text(`Payment Status: ${(data.payment.status || "—").toUpperCase()}`, margin, y); y += 8;
-  divider();
-
-  // ── SHIPPING (if available) ──
-  const s = data.shipping;
-  if (s.courier_name || s.tracking_id) {
-    sectionHeading("Shipping Details");
-    doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(...GRAY);
-    if (s.courier_name) { doc.text(`Courier: ${s.courier_name}`, margin, y); y += 6; }
-    if (s.tracking_id) { doc.text(`Tracking ID: ${s.tracking_id}`, margin, y); y += 6; }
-    y += 2; divider();
-  }
-
-  // ── PACKING CHECKLIST ──
-  checkPageBreak(85);
-  doc.setFillColor(...BLACK); doc.rect(margin, y, pageW - margin * 2, 9, "F");
-  doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(255, 255, 255);
-  doc.text("PACKING CHECKLIST", margin + 4, y + 6.2);
-  y += 16;
-  const checklist = [
-    "Correct product picked",
-    `Correct size: ${data.product.size || "—"}`,
-    `Correct color: ${data.product.color || "—"}`,
-    "Product packed in Clovical polybag",
-    "Ready for pickup",
-  ];
-  doc.setFont("helvetica", "normal"); doc.setFontSize(12); doc.setTextColor(...BLACK);
-  checklist.forEach((item) => {
-    checkPageBreak(11);
-    doc.setDrawColor(...BLACK); doc.setLineWidth(0.5);
-    doc.rect(margin, y - 4.2, 5.5, 5.5);
-    doc.text(item, margin + 9, y);
-    y += 11;
-  });
-
-  const filename = `Order-${(data.order.id || "").slice(0, 8)}.pdf`;
-  doc.save(filename);
-}
-
-// Read-only order detail modal — reuses the same PII-free pdf-data endpoint
-// already used for PDF generation. Shopkeepers get visibility only, no
-// delete/cancel power (that stays admin-only).
-async function viewOrderDetail(orderId) {
-  const modal = document.getElementById('detail-modal');
-  const body = document.getElementById('detail-body');
-  body.innerHTML = 'Loading...';
-  modal.classList.add('open');
-  try {
-    const data = await apiFetch(`/api/orders/shopkeeper/${orderId}/pdf-data`);
-    body.innerHTML = `
-      <div style="display:flex;gap:14px;align-items:center;margin-bottom:16px">
-        ${data.product.image ? `<img src="${data.product.image}" style="width:60px;height:60px;border-radius:8px;object-fit:cover;border:1px solid var(--border)">` : ''}
+  body.innerHTML = allShopkeepers.map(sk => `
+    <tr>
+      <td class="td-plain" data-label="Code"><strong>${escapeHtml(sk.code)}</strong></td>
+      <td data-label="Shop">
         <div>
-          <div style="font-weight:600">${data.product.name || '—'}</div>
-          <div style="font-size:0.82rem;color:var(--muted)">Size: ${data.product.size || '—'} · Color: ${data.product.color || '—'}</div>
-          <div style="font-weight:700;margin-top:4px">You Get: ₹${Number(data.product.shopkeeper_price || 0).toLocaleString('en-IN')}</div>
+          <div><strong>${escapeHtml(sk.shop_name)}</strong></div>
+          <div style="font-size:0.78rem;color:var(--muted)">${escapeHtml(sk.shopkeeper_name)} · ${escapeHtml(sk.contact || '—')}</div>
         </div>
-      </div>
-      <div style="font-size:0.85rem;line-height:1.9">
-        <div><strong>Status:</strong> <span class="badge badge-gold">${data.order.status || '—'}</span></div>
-        <div><strong>Payment:</strong> ${(data.payment.type || '—').toUpperCase()} · ${data.payment.status || '—'}</div>
-        <div><strong>Order Date:</strong> ${data.order.created_at ? new Date(data.order.created_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '—'}</div>
-        ${data.shipping.tracking_id ? `<div><strong>Tracking:</strong> ${data.shipping.courier_name ? data.shipping.courier_name + ' · ' : ''}${data.shipping.tracking_id}</div>` : ''}
-      </div>
-    `;
+      </td>
+      <td data-label="Products">${sk.total_products}</td>
+      <td data-label="Sold">${sk.total_sold}</td>
+      <td data-label="Panel Login">
+        <span class="login-status-cell">
+          <span class="badge badge-${sk.has_login ? 'success' : 'muted'}">${sk.has_login ? 'Active' : 'Not set'}</span>
+        </span>
+      </td>
+      <td class="td-actions" data-label="Actions">
+        <button class="btn btn-outline btn-sm" onclick='openEdit(${JSON.stringify(sk)})'>Edit</button>
+        <button class="btn btn-outline btn-sm" onclick="openCredsModal(${sk.id}, '${escapeHtml(sk.shop_name)}', ${sk.has_login})">${sk.has_login ? 'Reset Login' : 'Set Login'}</button>
+        ${sk.has_login ? `<button class="btn btn-outline btn-sm" onclick="revokeCredentials(${sk.id}, '${escapeHtml(sk.shop_name)}')">Revoke Login</button>` : ''}
+        <button class="btn btn-danger btn-sm" onclick="deleteShopkeeper(${sk.id}, '${escapeHtml(sk.shop_name)}')">Delete</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function openModal() {
+  editingId = null;
+  document.getElementById('modal-title').textContent = 'Add Shopkeeper';
+  document.getElementById('sk-shop-name').value = '';
+  document.getElementById('sk-shopkeeper-name').value = '';
+  document.getElementById('sk-contact').value = '';
+  document.getElementById('sk-address').value = '';
+  document.getElementById('sk-city').value = '';
+  document.getElementById('sk-state').value = '';
+  document.getElementById('sk-pincode').value = '';
+  document.getElementById('modal-alert').innerHTML = '';
+  document.getElementById('sk-modal').classList.add('open');
+}
+
+function openEdit(sk) {
+  editingId = sk.id;
+  document.getElementById('modal-title').textContent = 'Edit Shopkeeper';
+  document.getElementById('sk-shop-name').value = sk.shop_name || '';
+  document.getElementById('sk-shopkeeper-name').value = sk.shopkeeper_name || '';
+  document.getElementById('sk-contact').value = sk.contact || '';
+  document.getElementById('sk-address').value = sk.address || '';
+  document.getElementById('sk-city').value = sk.city || '';
+  document.getElementById('sk-state').value = sk.state || '';
+  document.getElementById('sk-pincode').value = sk.pincode || '';
+  document.getElementById('modal-alert').innerHTML = '';
+  document.getElementById('sk-modal').classList.add('open');
+}
+
+function closeModal() { document.getElementById('sk-modal').classList.remove('open'); }
+
+async function saveShopkeeper() {
+  const btn = document.getElementById('submit-btn');
+  const data = {
+    shop_name: document.getElementById('sk-shop-name').value.trim(),
+    shopkeeper_name: document.getElementById('sk-shopkeeper-name').value.trim(),
+    contact: document.getElementById('sk-contact').value.trim(),
+    address: document.getElementById('sk-address').value.trim() || null,
+    city: document.getElementById('sk-city').value.trim() || null,
+    state: document.getElementById('sk-state').value.trim() || null,
+    pincode: document.getElementById('sk-pincode').value.trim() || null,
+  };
+
+  if (!data.shop_name || !data.shopkeeper_name || !data.contact) {
+    document.getElementById('modal-alert').innerHTML = '<div class="alert alert-danger">Shop name, shopkeeper name and contact number are required</div>';
+    return;
+  }
+  if (data.pincode && data.pincode.length !== 6) {
+    document.getElementById('modal-alert').innerHTML = '<div class="alert alert-danger">Pincode must be exactly 6 digits</div>';
+    return;
+  }
+
+  btn.disabled = true; btn.textContent = 'Saving...';
+  try {
+    const url = editingId ? `/api/shopkeepers/admin/${editingId}` : '/api/shopkeepers/admin/add';
+    const method = editingId ? 'PUT' : 'POST';
+    await apiFetch(url, { method, body: JSON.stringify(data) });
+    showToast(editingId ? 'Shopkeeper updated! ✅' : 'Shopkeeper added! ✅');
+    closeModal();
+    loadShopkeepers();
   } catch (e) {
-    body.innerHTML = `<div class="alert alert-danger">${e.message || "Couldn't load this order."}</div>`;
+    document.getElementById('modal-alert').innerHTML = `<div class="alert alert-danger">${e.message || 'Failed to save shopkeeper'}</div>`;
+  }
+  btn.disabled = false; btn.textContent = 'Save';
+}
+
+async function deleteShopkeeper(id, name) {
+  if (!confirm(`Delete shopkeeper "${name}"? This cannot be undone.`)) return;
+  try {
+    await apiFetch(`/api/shopkeepers/admin/${id}`, { method: 'DELETE' });
+    showToast('Shopkeeper deleted', 'warning');
+    loadShopkeepers();
+  } catch (e) {
+    showToast(e.message || 'Failed to delete shopkeeper', 'error');
   }
 }
 
-function closeDetailModal() { document.getElementById('detail-modal').classList.remove('open'); }
-
-async function skLogout() {
-  await apiFetch('/api/shopkeeper-auth/logout', { method: 'POST' });
-  window.location = '/shopkeeper/login';
+// ─── Panel Login Credentials ────────────────────────────────────────────
+function openCredsModal(id, shopName, hasLogin) {
+  credsSkId = id;
+  document.getElementById('creds-modal-title').textContent = hasLogin ? `Reset Login — ${shopName}` : `Set Login — ${shopName}`;
+  document.getElementById('creds-username').value = '';
+  document.getElementById('creds-password').value = '';
+  document.getElementById('creds-modal-alert').innerHTML = '';
+  document.getElementById('creds-modal').classList.add('open');
 }
 
-loadOrders();
+function closeCredsModal() { document.getElementById('creds-modal').classList.remove('open'); }
+
+async function saveCredentials() {
+  const btn = document.getElementById('creds-submit-btn');
+  const username = document.getElementById('creds-username').value.trim();
+  const password = document.getElementById('creds-password').value;
+
+  if (username.length < 3) {
+    document.getElementById('creds-modal-alert').innerHTML = '<div class="alert alert-danger">Username must be at least 3 characters</div>';
+    return;
+  }
+  if (password.length < 6) {
+    document.getElementById('creds-modal-alert').innerHTML = '<div class="alert alert-danger">Password must be at least 6 characters</div>';
+    return;
+  }
+
+  btn.disabled = true; btn.textContent = 'Saving...';
+  try {
+    await apiFetch(`/api/shopkeepers/admin/${credsSkId}/credentials`, {
+      method: 'PUT',
+      body: JSON.stringify({ username, password }),
+    });
+    showToast('Panel login saved! ✅');
+    closeCredsModal();
+    loadShopkeepers();
+  } catch (e) {
+    document.getElementById('creds-modal-alert').innerHTML = `<div class="alert alert-danger">${e.message || 'Failed to save login'}</div>`;
+  }
+  btn.disabled = false; btn.textContent = 'Save Login';
+}
+
+async function revokeCredentials(id, shopName) {
+  if (!confirm(`Revoke panel login for "${shopName}"? They will no longer be able to sign in until you set a new login.`)) return;
+  try {
+    await apiFetch(`/api/shopkeepers/admin/${id}/credentials`, { method: 'DELETE' });
+    showToast('Panel login revoked', 'warning');
+    loadShopkeepers();
+  } catch (e) {
+    showToast(e.message || 'Failed to revoke login', 'error');
+  }
+}
+
+async function logout() {
+  await apiFetch('/api/auth/logout', { method: 'POST' });
+  window.location = '/admin/login';
+}
+
+loadShopkeepers();
 </script>
 </body>
 </html>

@@ -256,6 +256,20 @@
     /* ─── CAPTCHA ─────────────────────────────────────────── */
     .captcha-wrap {
       margin-bottom: 24px;
+      /* Turnstile's "normal" widget renders a fixed 300px-wide iframe
+         regardless of its parent's width. Below ~380px the form-card's
+         padding leaves less than 300px of content width, so the iframe
+         pokes past the card and forces the whole page to scroll
+         horizontally. render() below now asks for size:"flexible" so
+         the iframe itself fills the available width instead, but these
+         two rules are kept as a hard backstop: they cap the wrapper and
+         whatever Cloudflare injects inside it (div/iframe) to the
+         container's actual width no matter what size option is in play. */
+      max-width: 100%;
+    }
+    .captcha-wrap iframe,
+    .captcha-wrap > div {
+      max-width: 100%;
     }
 
     /* ─── PLACE ORDER ─────────────────────────────────────── */
@@ -921,6 +935,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       if (!window.turnstile) { setTimeout(renderOtpTurnstile, 200); return; }
       turnstileOtpWidgetId = window.turnstile.render("#turnstile-otp-widget", {
         sitekey: TURNSTILE_SITEKEY,
+        size: "flexible", // fills the card's actual width instead of the fixed 300px "normal" default — see .captcha-wrap comment
         callback: (token) => {
           turnstileOtpToken = token || "";
           document.getElementById("err-otp-turnstile").style.display = "none";
@@ -942,6 +957,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       if (!window.turnstile) { setTimeout(renderOrderTurnstile, 200); return; }
       turnstileOrderWidgetId = window.turnstile.render("#turnstile-widget", {
         sitekey: TURNSTILE_SITEKEY,
+        size: "flexible", // fills the card's actual width instead of the fixed 300px "normal" default — see .captcha-wrap comment
         callback: onTurnstileSuccess,
         "error-callback": onTurnstileError,
         "expired-callback": onTurnstileExpired,
