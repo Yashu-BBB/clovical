@@ -109,7 +109,7 @@ async def _clear_shopkeeper_and_public_caches(shopkeeper_id: int):
     # recomputed as a side effect, which is harmless.)
     await two_layer_clear_pattern(f"shopkeeper:analytics:{shopkeeper_id}")
     await cache_clear_pattern("products:*")
-    await two_layer_clear_pattern("products:filter-options:")
+    await two_layer_clear_pattern("products:filter-options:*")
     mem_clear_pattern("product:")
 
 

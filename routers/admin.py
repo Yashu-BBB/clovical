@@ -445,7 +445,7 @@ async def update_setting(key: str, data: SettingUpdate, admin=Depends(require_ad
     try:
         await run_query(supabase_admin.table("settings").upsert({"key": key, "value": data.value}))
         logger.info(f"Setting updated: {key} = {data.value} by admin {admin['sub']}")
-        await two_layer_clear_pattern("settings:")
+        await two_layer_clear_pattern("settings:*")
         mem_delete("settings:delivery_fee")
         mem_delete("settings:girls_section_enabled")
         mem_delete("public_settings")

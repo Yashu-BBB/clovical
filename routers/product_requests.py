@@ -281,7 +281,7 @@ async def accept_request(request_id: str, admin=Depends(require_admin)):
         await run_query(supabase_admin.table("product_requests").delete().eq("id", request_id))
 
         await cache_clear_pattern("products:*")
-        await two_layer_clear_pattern("products:filter-options:")
+        await two_layer_clear_pattern("products:filter-options:*")
         mem_clear_pattern("product:")
 
         logger.info(f"Request {request_id} accepted -> product live, by admin {admin['sub']}")

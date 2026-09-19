@@ -103,7 +103,7 @@ async def add_shopkeeper(data: ShopkeeperCreate, admin=Depends(require_admin)):
         elif data.address:
             logger.warning(f"NimbusPost pickup registration failed/skipped for new shopkeeper {new_sk['id']}")
 
-        await two_layer_clear_pattern("shopkeepers:")
+        await two_layer_clear_pattern("shopkeepers:*")
         return new_sk
     except Exception as e:
         logger.error(f"Failed to add shopkeeper: {e}", exc_info=True)
@@ -126,7 +126,7 @@ async def update_shopkeeper(sk_id: int, data: ShopkeeperUpdate, admin=Depends(re
             else:
                 logger.warning(f"NimbusPost pickup re-registration failed/skipped for shopkeeper {sk_id}")
 
-        await two_layer_clear_pattern("shopkeepers:")
+        await two_layer_clear_pattern("shopkeepers:*")
         return updated
     except Exception as e:
         logger.error(f"Failed to update shopkeeper: {e}", exc_info=True)
@@ -137,7 +137,7 @@ async def update_shopkeeper(sk_id: int, data: ShopkeeperUpdate, admin=Depends(re
 async def delete_shopkeeper(sk_id: int, admin=Depends(require_admin)):
     try:
         await run_query(supabase_admin.table("shopkeepers").delete().eq("id", sk_id))
-        await two_layer_clear_pattern("shopkeepers:")
+        await two_layer_clear_pattern("shopkeepers:*")
         return {"success": True}
     except Exception as e:
         logger.error(f"Failed to delete shopkeeper: {e}", exc_info=True)
@@ -184,7 +184,7 @@ async def set_shopkeeper_credentials(sk_id: int, data: ShopkeeperCredentials, ad
             "password": hash_password(data.password),
         }).eq("id", sk_id))
 
-        await two_layer_clear_pattern("shopkeepers:")
+        await two_layer_clear_pattern("shopkeepers:*")
         logger.info(f"Shopkeeper panel credentials set for shopkeeper {sk_id} by admin {admin['sub']}")
         return {"success": True}
     except HTTPException:
@@ -202,7 +202,7 @@ async def revoke_shopkeeper_credentials(sk_id: int, admin=Depends(require_admin)
             "username": None,
             "password": None,
         }).eq("id", sk_id))
-        await two_layer_clear_pattern("shopkeepers:")
+        await two_layer_clear_pattern("shopkeepers:*")
         logger.info(f"Shopkeeper panel credentials revoked for shopkeeper {sk_id} by admin {admin['sub']}")
         return {"success": True}
     except Exception as e:

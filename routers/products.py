@@ -414,7 +414,7 @@ async def add_product(
         }
         res = await run_query(supabase_admin.table("products").insert(product))
         await cache_clear_pattern("products:*")
-        await two_layer_clear_pattern("products:filter-options:")
+        await two_layer_clear_pattern("products:filter-options:*")
         mem_clear_pattern("product:")
         logger.info(f"Product added: {name} by admin {admin['sub']}")
         return res.data[0]
@@ -549,7 +549,7 @@ async def edit_product(
 
         res = await run_query(supabase_admin.table("products").update(updates).eq("id", product_id))
         await cache_clear_pattern("products:*")
-        await two_layer_clear_pattern("products:filter-options:")
+        await two_layer_clear_pattern("products:filter-options:*")
         mem_clear_pattern("product:")
         # Logs which fields were actually sent AND whether the update
         # matched a row, so a future "my edit didn't take" report can be
@@ -617,7 +617,7 @@ async def delete_product(product_id: str, admin=Depends(require_admin)):
         prod = await run_query(supabase_admin.table("products").select("name").eq("id", product_id).single())
         await run_query(supabase_admin.table("products").delete().eq("id", product_id))
         await cache_clear_pattern("products:*")
-        await two_layer_clear_pattern("products:filter-options:")
+        await two_layer_clear_pattern("products:filter-options:*")
         mem_clear_pattern("product:")
         logger.info(f"Product deleted: {prod.data.get('name')} by admin {admin['sub']}")
         return {"success": True}
@@ -679,7 +679,7 @@ async def admin_update_stock(product_id: str, data: StockUpdate, admin=Depends(r
 
         res = await run_query(supabase_admin.table("products").update(updates).eq("id", product_id))
         await cache_clear_pattern("products:*")
-        await two_layer_clear_pattern("products:filter-options:")
+        await two_layer_clear_pattern("products:filter-options:*")
         mem_clear_pattern("product:")
         logger.info(f"Stock updated for product {product_id} by admin {admin['sub']}: {updates}")
         updated = res.data[0] if res.data else {}
@@ -708,7 +708,7 @@ async def admin_mark_sold(product_id: str, qty: int = 1, admin=Depends(require_a
         new_stock = max(0, old_stock - max(1, qty))
         await run_query(supabase_admin.table("products").update({"stock": new_stock}).eq("id", product_id))
         await cache_clear_pattern("products:*")
-        await two_layer_clear_pattern("products:filter-options:")
+        await two_layer_clear_pattern("products:filter-options:*")
         mem_clear_pattern("product:")
         logger.info(f"Product {product_id} marked sold (-{qty}) by admin {admin['sub']}, new stock={new_stock}")
         await check_out_of_stock(product_id, res.data.get("name") or "Product", {"stock": old_stock}, {"stock": new_stock})

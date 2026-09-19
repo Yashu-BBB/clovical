@@ -152,7 +152,7 @@ async def add_category(data: CategoryCreate, admin=Depends(require_admin)):
             "gender": data.gender,
             "sort_order": data.sort_order
         }))
-        await two_layer_clear_pattern("categories:")
+        await two_layer_clear_pattern("categories:*")
         logger.info(f"Category added: {name} by admin {admin['sub']}")
         return res.data[0]
     except HTTPException:
@@ -178,7 +178,7 @@ async def update_category(cat_id: int, data: CategoryUpdate, admin=Depends(requi
                            f"Use that one instead of creating a near-duplicate."
                 )
         res = await run_query(supabase_admin.table("categories").update(updates).eq("id", cat_id))
-        await two_layer_clear_pattern("categories:")
+        await two_layer_clear_pattern("categories:*")
         return res.data[0] if res.data else {}
     except HTTPException:
         raise
@@ -191,7 +191,7 @@ async def update_category(cat_id: int, data: CategoryUpdate, admin=Depends(requi
 async def delete_category(cat_id: int, admin=Depends(require_admin)):
     try:
         await run_query(supabase_admin.table("categories").delete().eq("id", cat_id))
-        await two_layer_clear_pattern("categories:")
+        await two_layer_clear_pattern("categories:*")
         return {"success": True}
     except Exception as e:
         logger.error(f"Failed to delete category: {e}", exc_info=True)
