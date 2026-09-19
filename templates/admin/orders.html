@@ -16,6 +16,9 @@
     .order-thumb { width:38px; height:38px; border-radius:6px; object-fit:cover; border:1px solid var(--border); flex-shrink:0; }
     .order-thumb-placeholder { width:38px; height:38px; border-radius:6px; border:1px dashed var(--border); flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:0.9rem; color:var(--muted); background:#FAFAFA; }
     .pincode-tag { font-family:monospace; font-weight:700; letter-spacing:0.03em; }
+    /* At-a-glance marker for which orders still need a label attached
+       manually vs which already have a package PDF built. */
+    .label-badge { display:inline-block; margin-top:4px; white-space:nowrap; }
     .btn-spinner {
       display: inline-block;
       width: 11px;
@@ -161,6 +164,32 @@
   </div>
 </div>
 
+<!-- Attach Label Modal — manual fallback for when NimbusPost's API didn't
+     create the shipment automatically. The uploaded PDF is fed into the
+     exact same package-PDF pipeline the automatic path uses. -->
+<div class="modal-overlay" id="attach-label-modal">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-header">
+      <h3 class="modal-title">Attach NimbusPost Label</h3>
+      <button class="modal-close" onclick="closeAttachLabel()">×</button>
+    </div>
+    <div id="attach-label-alert"></div>
+    <p style="font-size:0.85rem;color:var(--muted);margin:0 0 14px">
+      Download the shipping label PDF from the NimbusPost dashboard, then upload it here.
+      It gets merged with the product photo into the shopkeeper's Package PDF — the same
+      file the automatic flow produces.
+    </p>
+    <div class="form-group">
+      <label class="form-label">Label PDF</label>
+      <input class="form-control" type="file" id="attach-label-file" accept="application/pdf,.pdf">
+    </div>
+    <div style="display:flex;gap:12px;margin-top:8px">
+      <button class="btn btn-primary btn-lg" style="flex:1" id="attach-label-submit" onclick="submitAttachLabel()">Upload &amp; Attach</button>
+      <button class="btn btn-outline" onclick="closeAttachLabel()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast-container"></div>
 <script src="/static/js/shared.js?v={{ ASSET_V }}"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -248,6 +277,10 @@ async function loadOrders() {
           ${o.nimbuspost_awb
             ? `<span class="badge badge-success">${o.shipping_status || 'created'}</span>`
             : (o.status === 'confirmed' ? '<span class="badge badge-warning">Not shipped</span>' : '<span style="color:var(--muted)">—</span>')}
+          <br>
+          ${o.package_pdf_status === 'ready'
+            ? `<span class="badge badge-success label-badge" title="Package PDF is built — the shopkeeper can download it now">📦 Label attached</span>`
+            : `<span class="badge badge-warning label-badge" title="No package PDF yet — attach the NimbusPost label manually">⚠️ Label needed</span>`}
         </td>
         <td data-label="Packing" style="font-size:0.75rem">
           <span class="badge badge-${PACKING_COLORS[o.packing_status] || 'muted'}" title="Set by the shopkeeper — read-only here">${(o.packing_status || 'unpacked').replace(/^./, c => c.toUpperCase())}</span>
@@ -258,6 +291,9 @@ async function loadOrders() {
             <button class="btn btn-outline btn-sm" onclick='openUpdate(${escapeHtml(JSON.stringify(o))})'>Update</button>
             <button class="btn btn-outline btn-sm" onclick="downloadOrderPDF('${o.id}', this)">📄 PDF</button>
             ${o.package_pdf_status === 'ready' ? `<button class="btn btn-outline btn-sm" onclick="downloadPackagePDF('${o.id}', this)">📦 Package PDF</button>` : ''}
+            <button class="btn btn-outline btn-sm" onclick="openAttachLabel('${o.id}')" title="Upload a NimbusPost label PDF downloaded manually from their dashboard">
+              ${o.package_pdf_status === 'ready' ? '🔁 Replace Label' : '📎 Attach Label'}
+            </button>
             ${!o.nimbuspost_awb
               ? (NIMBUSPOST_CONFIGURED
                   ? `<button class="btn btn-primary btn-sm" onclick="createShipment('${o.id}')">Create Shipment</button>`
@@ -462,6 +498,69 @@ async function downloadPackagePDF(orderId, btnEl) {
   } finally {
     btnEl.disabled = false;
     btnEl.innerHTML = originalHTML;
+  }
+}
+
+// ─── Manual label attach (NimbusPost API fallback) ──────────────────────
+// Admin downloads the label PDF from NimbusPost's dashboard and uploads it
+// here; the backend runs it through the same package-PDF builder the
+// automatic path uses, so the shopkeeper's "📦 Package PDF" button picks it
+// up with no changes on their side.
+let attachLabelOrderId = null;
+
+function openAttachLabel(orderId) {
+  attachLabelOrderId = orderId;
+  document.getElementById("attach-label-file").value = "";
+  document.getElementById("attach-label-alert").innerHTML = "";
+  document.getElementById("attach-label-modal").classList.add("open");
+}
+
+function closeAttachLabel() {
+  attachLabelOrderId = null;
+  document.getElementById("attach-label-modal").classList.remove("open");
+}
+
+async function submitAttachLabel() {
+  const input = document.getElementById("attach-label-file");
+  const alertBox = document.getElementById("attach-label-alert");
+  const file = input.files && input.files[0];
+  if (!file) {
+    alertBox.innerHTML = '<div class="alert alert-danger">Choose the label PDF first.</div>';
+    return;
+  }
+  if (file.type && file.type !== "application/pdf") {
+    alertBox.innerHTML = '<div class="alert alert-danger">Only PDF files are accepted.</div>';
+    return;
+  }
+
+  const btn = document.getElementById("attach-label-submit");
+  const originalHTML = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="btn-spinner"></span>Uploading...';
+  try {
+    const form = new FormData();
+    form.append("label", file);
+    // Raw fetch rather than apiFetch: apiFetch forces a JSON Content-Type,
+    // which would stop the browser from setting the multipart boundary.
+    const res = await fetch(`/api/orders/admin/${attachLabelOrderId}/attach-label`, {
+      method: "POST",
+      body: form
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Upload failed" }));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    await res.json();
+    closeAttachLabel();
+    showToast("Label attached ✅ Package PDF is ready for the shopkeeper");
+    // Re-renders the row so the badge flips to "📦 Label attached" and the
+    // shopkeeper-facing Package PDF button appears here too.
+    loadOrders();
+  } catch (e) {
+    alertBox.innerHTML = `<div class="alert alert-danger">${e.message || "Failed to attach label"}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalHTML;
   }
 }
 

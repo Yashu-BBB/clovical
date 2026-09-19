@@ -6,7 +6,7 @@ import logging
 import requests
 from typing import Literal
 from datetime import datetime, timezone
-from fastapi import APIRouter, Request, HTTPException, Depends
+from fastapi import APIRouter, Request, HTTPException, Depends, UploadFile, File
 from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -1073,6 +1073,111 @@ async def admin_package_pdf(order_id: str, admin=Depends(require_admin)):
     except Exception as e:
         logger.error(f"Admin package PDF fetch failed for order {order_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch order data")
+
+
+# Courier labels are single-page A6-ish PDFs — a few hundred KB at most.
+# 5MB is the same ceiling used for product image uploads, and is far more
+# headroom than a real label ever needs.
+MAX_LABEL_PDF_SIZE = 5 * 1024 * 1024
+
+
+@router.post("/admin/{order_id}/attach-label")
+async def admin_attach_label(
+    order_id: str,
+    label: UploadFile = File(...),
+    admin=Depends(require_admin),
+):
+    """
+    MANUAL fallback for the automatic NimbusPost label path.
+
+    When NimbusPost's API doesn't reliably fire on order confirmation, the
+    admin downloads the label PDF from NimbusPost's own dashboard and
+    uploads it here. Those raw bytes are handed straight to the SAME
+    _generate_shopkeeper_package_pdf() the automatic path uses — this is
+    only a second input into that one pipeline, never a parallel one. So
+    the resulting PDF is identical in structure (product photo page +
+    NimbusPost's untouched label page, barcode never redrawn) and lands on
+    the same package_pdf_* columns the shopkeeper's "📦 Package PDF"
+    button already reads.
+
+    Deliberately independent of nimbuspost_awb / shipping_status: the exact
+    scenario this covers is an order where the API never created a shipment,
+    so requiring an AWB here would lock out the only case it's for. Nothing
+    about the automatic integration (claim, AWB, label_url, shipping_status)
+    is read or written by this endpoint.
+
+    Unlike the automatic path, the PDF build is awaited rather than
+    fire-and-forget — the admin is waiting on the response and needs to be
+    told whether the attach actually worked.
+    """
+    try:
+        res = await run_query(supabase_admin.table("orders").select("*").eq("id", order_id).single())
+        order = res.data
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+
+        label_bytes = await label.read()
+        if not label_bytes:
+            raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+        if len(label_bytes) > MAX_LABEL_PDF_SIZE:
+            raise HTTPException(status_code=400, detail="Label PDF exceeds the 5MB limit.")
+        # Check the actual file header rather than trusting the filename or
+        # the browser's Content-Type — a non-PDF would otherwise only fail
+        # later inside pypdf, surfacing as a vague "generation failed".
+        if not label_bytes.startswith(b"%PDF"):
+            raise HTTPException(status_code=400, detail="That file isn't a PDF. Upload the label PDF from NimbusPost.")
+
+        # Only used by the fallback packing-slip page, which is never drawn
+        # when real label bytes are supplied — so a missing shopkeeper row
+        # can't break this path, and shouldn't block the attach.
+        shopkeeper = None
+        shopkeeper_id = order.get("shopkeeper_id")
+        if shopkeeper_id:
+            try:
+                sk_res = await run_query(
+                    supabase_admin.table("shopkeepers").select("*").eq("id", shopkeeper_id).single()
+                )
+                shopkeeper = sk_res.data
+            except Exception as e:
+                logger.warning(f"Could not load shopkeeper {shopkeeper_id} for manual label attach on order {order_id}: {e}")
+        if not shopkeeper:
+            logger.warning(f"Order {order_id} has no resolvable shopkeeper — attaching label with order details only")
+
+        # The one and only build call — same function, same arguments, the
+        # manually-downloaded bytes simply taking the place of the ones the
+        # API would have supplied. It writes package_pdf_status='ready',
+        # package_pdf_base64, package_pdf_filename and
+        # package_pdf_generated_at itself, and never raises.
+        await _generate_shopkeeper_package_pdf(order, shopkeeper or {}, label_bytes)
+
+        # _generate_shopkeeper_package_pdf swallows its own failures and
+        # records them as package_pdf_status='failed', so read the row back
+        # to find out which happened instead of reporting a false success.
+        check = await run_query(
+            supabase_admin.table("orders")
+            .select("id,package_pdf_status,package_pdf_filename,package_pdf_generated_at")
+            .eq("id", order_id).single()
+        )
+        updated = check.data or {}
+        if updated.get("package_pdf_status") != "ready":
+            raise HTTPException(
+                status_code=500,
+                detail="Label uploaded but the package PDF could not be built. Check the file and try again.",
+            )
+
+        logger.info(f"Manual NimbusPost label attached for order {order_id} by admin — package PDF ready")
+        return {
+            "success": True,
+            "order_id": order_id,
+            "package_pdf_status": updated.get("package_pdf_status"),
+            "package_pdf_filename": updated.get("package_pdf_filename"),
+            "package_pdf_generated_at": updated.get("package_pdf_generated_at"),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Manual label attach failed for order {order_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to attach label")
 
 
 @router.put("/admin/{order_id}")
