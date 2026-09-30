@@ -311,8 +311,8 @@ async def products_page(request: Request):
         "Boys Collection — clovical" if gender == "Boys" else "Shop All Collections — clovical"
     )
     description = (
-        "Browse clovical's full collection of curated kids' fashion from local "
-        "boutique shops — filter by size, colour, category and price."
+        "Browse clovical's full collection of curated fashion for boys and girls from "
+        "local boutique shops — filter by size, colour, category and price."
     )
     return render("customer/products.html", request, page_title=title, page_description=description)
 
@@ -325,7 +325,7 @@ async def product_detail(request: Request, product_id: str):
     # endpoint, so this never double-increments view_count.
     product_name = "Product"
     product_title = "Product — clovical"
-    product_description = "Shop quality kids' clothing at clovical, connecting local boutique shops to online customers."
+    product_description = "Shop quality boys' and girls' clothing at clovical, connecting local boutique shops to online customers."
     product_image = DEFAULT_OG_IMAGE
     product_url = f"{SITE_URL}/product/{product_id}"
     product_ld_json = None
@@ -344,7 +344,7 @@ async def product_detail(request: Request, product_id: str):
             name = (data.get("name") or "Product").strip()
             desc = (data.get("description") or "").strip()
             if not desc:
-                desc = f"Shop {name} at clovical — quality kids' clothing, delivered fast."
+                desc = f"Shop {name} at clovical — quality clothing from local boutiques, delivered fast."
             ld_desc = desc  # full-length description for JSON-LD (no truncation needed there)
             if len(desc) > 160:
                 desc = desc[:157].rstrip() + "..."
