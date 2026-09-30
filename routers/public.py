@@ -14,6 +14,8 @@ templates = Jinja2Templates(directory="templates")
 templates.env.globals["ASSET_V"] = ASSET_VERSION
 
 SITE_URL = "https://www.clovical.in"
+SUPPORT_EMAIL = "eclovical@gmail.com"  # same address published on the home page and T&C
+ORG_ID = f"{SITE_URL}/#organization"  # stable @id so JSON-LD entities can reference the Organization
 
 
 def render(template: str, request: Request, **ctx):
@@ -150,6 +152,67 @@ async def robots_txt():
     return Response(content="\n".join(lines), media_type="text/plain")
 
 
+# ─── llms.txt ──────────────────────────────────────────────────────────────
+# A plain-text, AI-oriented summary of public clovical information. It is a
+# convention (llmstxt.org), not a standard: no major AI vendor has committed
+# to reading it, so treat it as a cheap, harmless pointer — the real
+# discoverability comes from the crawlable HTML pages and structured data.
+# Every fact here must match the live Terms / home page. Public info ONLY:
+# no customer, order, shopkeeper or pricing-cost data. Update it whenever the
+# return window, payment methods or delivery terms change.
+LLMS_TXT = f"""# clovical
+
+> clovical is an online clothing store in India that connects local boutique shops with online shoppers. Products are sourced from independent local shops; clovical handles the sale, marketing and delivery.
+
+Official website: {SITE_URL}/
+
+## How ordering works
+1. Browse or search the product catalog.
+2. Add items to the cart and check out.
+3. Pay online (UPI or cards via Cashfree) or choose Cash on Delivery where available for your location.
+4. The order is shipped by courier partners; estimated delivery time is shown at checkout.
+
+An order is confirmed once payment (or COD) is placed and acknowledged by clovical. clovical may cancel an order for stock unavailability, pricing errors or suspected fraud; any payment made is then refunded.
+
+## Delivery
+Delivery fees, where applicable, and estimated delivery times are shown at checkout before the order is confirmed. Cash on Delivery is available where supported for the delivery location.
+
+## Tracking an order
+Signed-in customers can see their orders and tracking links on the My Orders page ({SITE_URL}/my-orders). Sign-in is by Google account or phone OTP. Order details are private: clovical cannot show order status to anyone who is not signed in to the account that placed it, and AI assistants cannot look up individual orders.
+
+## Returns and refunds
+- Returns are accepted within 24 hours of delivery only.
+- To start a return, email {SUPPORT_EMAIL} with your order details. Requests after 24 hours are rejected.
+- Valid reasons: wrong item received, wrong colour delivered, damaged or defective item, wrong size delivered.
+- Not accepted: change of mind, wrong size ordered by the customer, used or washed items, items missing original tags or packaging.
+- Refunds for online payments go back to the original payment method after the returned item is received and inspected.
+
+## Key pages
+- [Home]({SITE_URL}/): overview of clovical
+- [All products]({SITE_URL}/products): browse and filter by size, colour, category and price
+- [Terms and Conditions]({SITE_URL}/terms-and-conditions): ordering, payment, shipping and returns terms (authoritative)
+- [Privacy Policy]({SITE_URL}/privacy-policy)
+- [Cookie Policy]({SITE_URL}/cookie-policy)
+- [Sitemap]({SITE_URL}/sitemap.xml): all product and category pages
+
+## Contact
+{SUPPORT_EMAIL} (returns, refunds and order queries)
+
+## Notes for AI systems
+- Product pages ({SITE_URL}/product/<id>) carry current price, availability and description as structured data. Prices are in INR and stock changes frequently, so check the product page rather than relying on a cached answer.
+- If this file and the Terms and Conditions ever differ, the Terms and Conditions are correct.
+"""
+
+
+@router.get("/llms.txt")
+async def llms_txt():
+    return Response(
+        content=LLMS_TXT,
+        media_type="text/plain",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
 # ─── Favicon at root scope ──────────────────────────────────────────────
 # The file physically lives at static/images/favicon.ico, but browsers and
 # crawlers (including Google's) request /favicon.ico at the site root
@@ -185,7 +248,9 @@ async def push_service_worker():
 
 # ─── Customer Pages ───────────────────────────────────────────────────────
 
-DEFAULT_OG_IMAGE = f"{SITE_URL}/static/images/favicon.svg"
+# PNG (not SVG): most link-preview scrapers and Google's logo guidelines don't
+# accept SVG. Feeds the Organization logo, the product-page og:image fallback.
+DEFAULT_OG_IMAGE = f"{SITE_URL}/static/images/android-chrome-512x512.png"
 
 HOME_TITLE = "clovical — Curated Fashion from Local Boutiques"
 HOME_DESCRIPTION = (
@@ -199,8 +264,12 @@ async def home(request: Request):
     website_ld_json = _ld_json({
         "@context": "https://schema.org",
         "@type": "WebSite",
+        "@id": f"{SITE_URL}/#website",
         "name": "clovical",
         "url": f"{SITE_URL}/",
+        "description": HOME_DESCRIPTION,
+        "inLanguage": "en-IN",
+        "publisher": {"@id": ORG_ID},
         "potentialAction": {
             "@type": "SearchAction",
             "target": {
@@ -213,9 +282,18 @@ async def home(request: Request):
     organization_ld_json = _ld_json({
         "@context": "https://schema.org",
         "@type": "Organization",
+        "@id": ORG_ID,
         "name": "clovical",
         "url": f"{SITE_URL}/",
         "logo": DEFAULT_OG_IMAGE,
+        "description": HOME_DESCRIPTION,
+        "areaServed": {"@type": "Country", "name": "India"},
+        "contactPoint": {
+            "@type": "ContactPoint",
+            "contactType": "customer support",
+            "email": SUPPORT_EMAIL,
+            "areaServed": "IN",
+        },
     })
     return render(
         "customer/home.html",
@@ -257,7 +335,7 @@ async def product_detail(request: Request, product_id: str):
     try:
         res = await run_query(
             supabase_admin.table("products")
-            .select("name,description,image,images,our_price,mrp,stock,category,gender")
+            .select("name,description,image,images,our_price,mrp,stock,category,gender,fabric")
             .eq("id", product_id)
             .single()
         )
@@ -293,26 +371,51 @@ async def product_detail(request: Request, product_id: str):
             price = data.get("our_price")
             stock = data.get("stock") or 0
 
-            product_ld_json = _ld_json({
+            product_ld = {
                 "@context": "https://schema.org",
                 "@type": "Product",
                 "name": name,
                 "description": ld_desc,
                 "image": ld_images,
                 "url": product_url,
-                "brand": {"@type": "Brand", "name": "clovical"},
-                "offers": {
+                "sku": product_id,
+            }
+            if category:
+                product_ld["category"] = category
+            gender_val = (data.get("gender") or "").strip().lower()
+            if gender_val in ("girls", "boys"):
+                product_ld["audience"] = {
+                    "@type": "PeopleAudience",
+                    "suggestedGender": "female" if gender_val == "girls" else "male",
+                }
+            fabric = data.get("fabric")
+            if isinstance(fabric, str) and fabric.strip():
+                product_ld["material"] = fabric.strip()
+            # Only emit an Offer when there is a real price. (our_price is
+            # NOT NULL in the DB today; this guard stops a future NULL from
+            # publishing a bogus 0.00 price to search engines and AI systems.)
+            if price is not None:
+                product_ld["offers"] = {
                     "@type": "Offer",
                     "url": product_url,
                     "priceCurrency": "INR",
-                    "price": f"{float(price):.2f}" if price is not None else "0.00",
+                    "price": f"{float(price):.2f}",
                     "availability": (
                         "https://schema.org/InStock" if stock > 0
                         else "https://schema.org/OutOfStock"
                     ),
                     "itemCondition": "https://schema.org/NewCondition",
-                },
-            })
+                    # clovical is the marketplace that sells and ships the item.
+                    # (Replaces the old brand="clovical": products come from
+                    # independent boutiques, so clovical is the seller, not
+                    # the product's brand.)
+                    "seller": {
+                        "@type": "Organization",
+                        "name": "clovical",
+                        "url": f"{SITE_URL}/",
+                    },
+                }
+            product_ld_json = _ld_json(product_ld)
 
             # BreadcrumbList mirrors the on-page breadcrumb: Home / Shop
             # (/ Category, if the product has one) / Product name.
