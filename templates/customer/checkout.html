@@ -1353,7 +1353,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
 
         Cart.clear();
         showToast("Order placed successfully!", "success");
-        setTimeout(() => { window.location = "/"; }, 1800);
+        setTimeout(() => { window.location = "/my-orders"; }, 1800);
       } catch (e) {
         showToast(e.message || "Failed to place order", "error");
 
